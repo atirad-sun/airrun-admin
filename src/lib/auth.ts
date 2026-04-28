@@ -1,20 +1,14 @@
 import { supabase } from "./supabase";
 
 /**
- * Send a magic-link to `email`. The link redirects back to /auth/callback,
- * which reads the session and routes the user into the admin app.
+ * Admin SPA auth helpers — email + password.
  *
- * Real admin allow-list enforcement happens server-side via the `admin-api`
- * Edge Function — anyone with email auth can request a link, but only rows
- * present in `admins` can actually use the dashboard.
+ * The allow-list lives server-side: every admin-api request runs through
+ * `is_admin(auth.uid())`. A valid Supabase session is necessary but not
+ * sufficient — only rows in `admins` actually get past the Edge Function.
  */
-export async function requestMagicLink(email: string) {
-  return supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
-  });
+export async function signInWithPassword(email: string, password: string) {
+  return supabase.auth.signInWithPassword({ email, password });
 }
 
 export async function signOut() {

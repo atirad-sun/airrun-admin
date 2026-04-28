@@ -8,7 +8,6 @@ import {
 import { supabase } from "@/lib/supabase";
 import AdminShell from "@/components/AdminShell";
 import Login from "@/screens/Login";
-import AuthCallback from "@/screens/AuthCallback";
 import Overview from "@/screens/Overview";
 import Parks from "@/screens/Parks";
 import Users from "@/screens/Users";
@@ -50,7 +49,6 @@ function RequireAuth() {
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
-  { path: "/auth/callback", element: <AuthCallback /> },
   {
     element: <RequireAuth />,
     children: [

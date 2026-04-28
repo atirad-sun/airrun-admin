@@ -1,26 +1,33 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { requestMagicLink } from "@/lib/auth";
+import { signInWithPassword } from "@/lib/auth";
+
+type Status = "idle" | "signing-in" | "error";
+
+function friendlyError(message: string): string {
+  if (/invalid login credentials/i.test(message)) return "Wrong email or password.";
+  return message;
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
-    "idle"
-  );
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setStatus("sending");
+    setStatus("signing-in");
     setError(null);
-    const { error } = await requestMagicLink(email.trim());
+    const { error } = await signInWithPassword(email.trim(), password);
     if (error) {
       setStatus("error");
-      setError(error.message);
+      setError(friendlyError(error.message));
       return;
     }
-    setStatus("sent");
+    // On success, RequireAuth's onAuthStateChange listener flips to "in"
+    // and react-router renders the admin shell — no manual navigate needed.
   }
 
   return (
@@ -33,34 +40,37 @@ export default function Login() {
           </p>
         </div>
 
-        {status === "sent" ? (
-          <div className="rounded-md border bg-card p-4 text-sm">
-            Check your inbox at <strong>{email}</strong> for the magic link.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <Input
-              type="email"
-              required
-              autoFocus
-              placeholder="you@airrun.app"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={status === "sending"}
-            >
-              {status === "sending" ? "Sending…" : "Send magic link"}
-            </Button>
-            {error && (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            )}
-          </form>
-        )}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <Input
+            type="email"
+            required
+            autoFocus
+            placeholder="you@airrun.app"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Input
+            type="password"
+            required
+            placeholder="Password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={status === "signing-in"}
+          >
+            {status === "signing-in" ? "Signing in…" : "Sign in"}
+          </Button>
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
       </div>
     </div>
   );
