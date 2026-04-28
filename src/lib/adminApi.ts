@@ -70,8 +70,45 @@ export interface OverviewResponse {
     bugs_open: number;
     feedback_total: number;
   };
+  // R2.1 — admin-meta counts that drive the dashboard's metric cards +
+  // quick-links section.  All present after the corresponding migration
+  // 017 columns landed; older clients ignore extra fields so it's safe
+  // to ship before every consumer is updated.
+  counts_extra: {
+    parks_visible: number;
+    reports_new: number;
+    feedback_new: number;
+    bugs_high_open: number;
+    parks_unverified: number;
+  };
   aqi_distribution: { band: string; count: number }[];
   activity: { kind: string; created_at: string; summary: string }[];
+  urgent_reports: Array<{
+    id: number | string;
+    park_id: string;
+    park_name: string | null;
+    category: string | null;
+    status: string;
+    severity: string;
+    created_at: string;
+  }>;
+  urgent_bugs: Array<{
+    id: string;
+    title: string;
+    status: string;
+    severity: string;
+    created_at: string;
+  }>;
+  top_parks: Array<{
+    id: string;
+    name: string;
+    district: string | null;
+    aqi: number;
+    aqi_status: string; // 7-band: Good|Moderate|Poor|Bad|Hazardous|Unknown (pre-existing)
+    visible: boolean;
+    verified: boolean;
+    aqi_updated_at: string | null;
+  }>;
 }
 
 export function fetchOverview(): Promise<OverviewResponse> {
