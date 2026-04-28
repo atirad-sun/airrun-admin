@@ -226,3 +226,88 @@ export function patchBug(
 ): Promise<{ bug: Bug }> {
   return adminWrite<{ bug: Bug }>("patch-bug", { id, patch });
 }
+
+// ── Parks ──
+
+export interface ParkListRow {
+  id: string;
+  name: string;
+  district: string | null;
+  lat: number;
+  lng: number;
+  station_name: string | null;
+  track_length_km: number | null;
+  open_time: string | null;
+  close_time: string | null;
+  visible: boolean;
+  verified: boolean;
+  aqi: number;
+  aqi_status: string; // 7-band: Good|Moderate|Poor|Bad|Hazardous|Unknown (pre-existing)
+  aqi_updated_at: string | null;
+  reports_count: number;
+}
+
+// Detail view includes the AQI side-data the list omits (pm25, pm10,
+// temperature, uv_index).  Same id shape as the list row so both can
+// flow through the same drawer without copy-conversion.
+export interface Park extends Omit<ParkListRow, "reports_count"> {
+  pm25: number | null;
+  pm10: number | null;
+  temperature: number | null;
+  uv_index: number | null;
+}
+
+export interface ParkReportRow {
+  id: number;
+  status: string;
+  severity: string;
+  category: string | null;
+  created_at: string;
+  user_id: string;
+  user_name: string | null;
+  message: string;
+}
+
+export type ParkPatch = Partial<
+  Pick<
+    ParkListRow,
+    | "name"
+    | "district"
+    | "lat"
+    | "lng"
+    | "station_name"
+    | "track_length_km"
+    | "open_time"
+    | "close_time"
+    | "verified"
+    | "visible"
+  >
+>;
+
+export function fetchParks(): Promise<{ parks: ParkListRow[] }> {
+  return adminRead<{ parks: ParkListRow[] }>("parks");
+}
+
+export function fetchPark(id: string): Promise<{ park: Park | null }> {
+  return adminRead<{ park: Park | null }>("park", { id });
+}
+
+export function fetchParkReports(
+  id: string
+): Promise<{ reports: ParkReportRow[] }> {
+  return adminRead<{ reports: ParkReportRow[] }>("park-reports", { id });
+}
+
+export function patchPark(
+  id: string,
+  patch: ParkPatch
+): Promise<{ park: Park }> {
+  return adminWrite<{ park: Park }>("patch-park", { id, patch });
+}
+
+export function togglePark(
+  id: string,
+  visible: boolean
+): Promise<{ park: Park }> {
+  return adminWrite<{ park: Park }>("toggle-park-visibility", { id, visible });
+}
