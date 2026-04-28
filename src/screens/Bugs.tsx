@@ -1,5 +1,27 @@
-import { useEffect, useState, useCallback } from "react";
-import { Plus } from "lucide-react";
+// Port of airrun-design/project/admin-page-ops.jsx (BugsPage section).
+// Composition-only against the R1 primitive set.  Backend is the same
+// as the Phase B/C wiring — admin-api-{read,write} bug actions unchanged.
+//
+// Comments (Add Comment / Post comment from the design) are intentionally
+// out of scope per the R3 plan: no bug_comments table or admin-api action
+// exists for them yet, and building that is deferred to a later phase.
+
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   fetchBug,
   fetchBugs,
@@ -9,32 +31,21 @@ import {
   type BugListRow,
   type BugSeverity,
   type BugStatus,
-  type BugFilters,
   type CreateBugInput,
-  type BugPatch,
 } from "@/lib/adminApi";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import Btn from "@/components/Btn";
+import Card from "@/components/Card";
+import Chip from "@/components/Chip";
 import DataTable, { type Column } from "@/components/DataTable";
 import DetailDrawer from "@/components/DetailDrawer";
-import { cn } from "@/lib/utils";
+import DetailRow from "@/components/DetailRow";
+import EmptyState from "@/components/EmptyState";
+import FilterBar from "@/components/FilterBar";
+import LoadingState from "@/components/LoadingState";
+import PageHeader from "@/components/PageHeader";
+import SearchInput from "@/components/SearchInput";
+import SevChip from "@/components/SevChip";
+import { IC } from "@/components/icons";
 
 const SEVERITY_OPTIONS: BugSeverity[] = ["low", "medium", "high", "critical"];
 const STATUS_OPTIONS: BugStatus[] = [
@@ -45,277 +56,527 @@ const STATUS_OPTIONS: BugStatus[] = [
   "closed",
 ];
 
-const SEVERITY_STYLE: Record<BugSeverity, string> = {
-  low: "bg-slate-100 text-slate-700",
-  medium: "bg-amber-100 text-amber-800",
-  high: "bg-orange-100 text-orange-800",
-  critical: "bg-red-100 text-red-800",
+// Status state machine for the detail drawer's "Move to next" button.
+// Closed terminates — no auto-progression past fixed; user explicitly hits
+// Close to mark closed.
+const NEXT_STATUS: Partial<Record<BugStatus, BugStatus>> = {
+  open: "triaged",
+  triaged: "in_progress",
+  in_progress: "fixed",
 };
 
-const STATUS_STYLE: Record<BugStatus, string> = {
-  open: "bg-blue-100 text-blue-800",
-  triaged: "bg-purple-100 text-purple-800",
-  in_progress: "bg-amber-100 text-amber-800",
-  fixed: "bg-emerald-100 text-emerald-800",
-  closed: "bg-slate-100 text-slate-600",
-};
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const today = new Date();
+  if (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  )
+    return d.toTimeString().slice(0, 5);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
-function formatRelative(iso: string): string {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
+function statusLabel(s: BugStatus): string {
+  return s.replace("_", " ");
 }
 
 export default function Bugs() {
   const [rows, setRows] = useState<BugListRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<BugFilters>({});
+
+  // Filters — all client-side. The API supports filtering on status/severity/
+  // area, but combining substring search across title+area means we filter
+  // post-fetch anyway. bugs is hard-capped at 200 server-side so this is fine.
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | BugStatus>("all");
+  const [filterSev, setFilterSev] = useState<"all" | BugSeverity>("all");
+
   const [selected, setSelected] = useState<Bug | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setRows(null);
     setLoadError(null);
-    fetchBugs(filters)
+    // Pull all bugs; filtering is client-side so the API call stays cacheable.
+    fetchBugs({})
       .then((res) => setRows(res.bugs))
       .catch((err: Error) => setLoadError(err.message));
-  }, [filters]);
+  }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  const filtered = useMemo(() => {
+    if (!rows) return [];
+    const q = search.trim().toLowerCase();
+    return rows.filter((b) => {
+      if (filterStatus !== "all" && b.status !== filterStatus) return false;
+      if (filterSev !== "all" && b.severity !== filterSev) return false;
+      if (q && !b.title.toLowerCase().includes(q) && !b.area.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [rows, search, filterStatus, filterSev]);
+
   const openDetail = useCallback(async (row: BugListRow) => {
+    setActionError(null);
     setDrawerOpen(true);
     setSelected(null);
     try {
       const { bug } = await fetchBug(row.id);
       setSelected(bug);
     } catch (err) {
-      setSelected({ ...row, description: `Failed to load: ${(err as Error).message}`, steps: null, device: null, logs: null, reporter_user_id: null } as Bug);
+      setSelected({
+        ...row,
+        description: `Failed to load: ${(err as Error).message}`,
+        steps: null,
+        device: null,
+        logs: null,
+        reporter_user_id: null,
+      });
     }
   }, []);
+
+  const handleStatus = useCallback(
+    async (id: string, next: BugStatus) => {
+      setActionError(null);
+      try {
+        const { bug } = await patchBug(id, { status: next });
+        setSelected(bug);
+        load();
+      } catch (err) {
+        setActionError((err as Error).message);
+      }
+    },
+    [load]
+  );
 
   const handleCreate = useCallback(
     async (input: CreateBugInput) => {
       const { bug } = await createBug(input);
       setCreateOpen(false);
       load();
-      // Open the freshly created bug in the drawer
       setSelected(bug);
       setDrawerOpen(true);
     },
     [load]
   );
 
-  const handlePatch = useCallback(
-    async (id: string, patch: BugPatch) => {
-      const { bug } = await patchBug(id, patch);
-      setSelected(bug);
-      load();
-    },
-    [load]
-  );
+  // Counts for the page header sub-line.
+  const openCount = rows?.filter((b) => b.status === "open").length ?? 0;
+  const inProgressCount = rows?.filter((b) => b.status === "in_progress").length ?? 0;
 
-  const columns: Column<BugListRow>[] = [
+  const cols: Column<BugListRow>[] = [
     {
       key: "id",
-      header: "ID",
-      cell: (r) => <span className="font-mono text-xs">{r.id}</span>,
-      className: "whitespace-nowrap",
-    },
-    {
-      key: "severity",
-      header: "Severity",
-      cell: (r) => (
-        <span
-          className={cn(
-            "inline-block rounded px-2 py-0.5 text-xs font-medium",
-            SEVERITY_STYLE[r.severity]
-          )}
-        >
-          {r.severity}
+      label: "ID",
+      render: (v) => (
+        <span style={{ fontSize: 11, color: "#B6C7D6", fontFamily: "monospace" }}>
+          {v as string}
         </span>
       ),
-      className: "whitespace-nowrap",
     },
     {
       key: "title",
-      header: "Title",
-      fill: true,
-      cell: (r) => <span className="font-medium">{r.title}</span>,
+      label: "Title",
+      sortable: true,
+      maxWidth: 260,
+      render: (v, row) => (
+        <div>
+          <div style={{ fontWeight: 500, color: "#24262B", fontSize: 13 }}>
+            {v as string}
+          </div>
+          <div style={{ fontSize: 11, color: "#777D86" }}>{row.area}</div>
+        </div>
+      ),
     },
     {
-      key: "area",
-      header: "Area",
-      cell: (r) => (
-        <span className="text-sm text-muted-foreground">{r.area}</span>
-      ),
-      className: "whitespace-nowrap",
+      key: "severity",
+      label: "Sev",
+      sortable: true,
+      render: (v) => <SevChip sev={v as string} />,
     },
     {
       key: "status",
-      header: "Status",
-      cell: (r) => (
-        <span
-          className={cn(
-            "inline-block rounded px-2 py-0.5 text-xs font-medium",
-            STATUS_STYLE[r.status]
-          )}
-        >
-          {r.status}
-        </span>
+      label: "Status",
+      sortable: true,
+      render: (v) => <Chip status={v as string} />,
+    },
+    {
+      key: "reporter_name",
+      label: "Reporter",
+      render: (v) => (
+        <span style={{ fontSize: 12, color: "#777D86" }}>{(v as string) ?? "—"}</span>
       ),
-      className: "whitespace-nowrap",
     },
     {
       key: "owner",
-      header: "Owner",
-      cell: (r) => (
-        <span className="text-sm text-muted-foreground">{r.owner ?? "—"}</span>
+      label: "Owner",
+      render: (v) => (
+        <span style={{ fontSize: 12, color: "#24262B" }}>{(v as string) ?? "—"}</span>
       ),
-      className: "whitespace-nowrap",
     },
     {
-      key: "created",
-      header: "Created",
-      cell: (r) => (
-        <span className="text-xs text-muted-foreground">
-          {formatRelative(r.created_at)}
+      key: "created_at",
+      label: "Created",
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontSize: 12, color: "#777D86" }}>
+          {formatShortDate(v as string)}
         </span>
       ),
-      className: "whitespace-nowrap text-right",
     },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Bugs</h1>
-          <p className="text-sm text-muted-foreground">
-            {rows ? `${rows.length} ${rows.length === 1 ? "row" : "rows"}` : "—"}
-          </p>
-        </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="size-4" />
-              New bug
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create bug</DialogTitle>
-              <DialogDescription>
-                ID is generated automatically (BUG-001, BUG-002, …).
-              </DialogDescription>
-            </DialogHeader>
-            <CreateBugForm
-              onSubmit={handleCreate}
-              onCancel={() => setCreateOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={(filters.status as string) ?? "all"}
-          onValueChange={(v) =>
-            setFilters((f) => ({
-              ...f,
-              status: v === "all" ? undefined : (v as BugStatus),
-            }))
-          }
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={filters.severity ?? "all"}
-          onValueChange={(v) =>
-            setFilters((f) => ({
-              ...f,
-              severity: v === "all" ? undefined : (v as BugSeverity),
-            }))
-          }
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Severity" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All severities</SelectItem>
-            {SEVERITY_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Input
-          className="w-56"
-          placeholder="Filter by area (exact)"
-          value={filters.area ?? ""}
-          onChange={(e) =>
-            setFilters((f) => ({
-              ...f,
-              area: e.target.value || undefined,
-            }))
-          }
-        />
-      </div>
-
-      {loadError && (
-        <p className="text-sm text-destructive">Failed to load: {loadError}</p>
-      )}
-
-      <DataTable<BugListRow>
-        columns={columns}
-        rows={rows ?? []}
-        rowKey={(r) => r.id}
-        onRowClick={openDetail}
-        loading={!rows && !loadError}
-        emptyMessage="No bugs match these filters."
+    <div>
+      <PageHeader
+        title="Bug Tracker"
+        sub={
+          rows
+            ? `${openCount} open · ${inProgressCount} in progress`
+            : undefined
+        }
+        actions={
+          <Btn variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
+            {IC.plus} File Bug
+          </Btn>
+        }
       />
+
+      <Card>
+        <div
+          style={{
+            padding: "14px 16px",
+            borderBottom: "1px solid #EDF0F3",
+          }}
+        >
+          <FilterBar>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search bugs…"
+              width={240}
+            />
+            <Select
+              value={filterStatus}
+              onValueChange={(v) =>
+                setFilterStatus(v as "all" | BugStatus)
+              }
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {statusLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filterSev}
+              onValueChange={(v) =>
+                setFilterSev(v as "all" | BugSeverity)
+              }
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Severity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All severity</SelectItem>
+                {SEVERITY_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 12,
+                color: "#777D86",
+              }}
+            >
+              {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+            </span>
+          </FilterBar>
+        </div>
+
+        {loadError ? (
+          <div
+            style={{
+              padding: 16,
+              color: "#EF4B4B",
+              fontSize: 13,
+              background: "#FFF1F1",
+              borderTop: "1px solid #FECACA",
+            }}
+            role="alert"
+          >
+            Failed to load: {loadError}
+          </div>
+        ) : !rows ? (
+          <LoadingState />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No bugs match the current filters." />
+        ) : (
+          <DataTable<BugListRow>
+            cols={cols}
+            rows={filtered}
+            onRow={openDetail}
+            emptyMsg="No bugs match the current filters."
+          />
+        )}
+      </Card>
 
       <DetailDrawer
         open={drawerOpen}
         onOpenChange={(o) => {
           setDrawerOpen(o);
-          if (!o) setSelected(null);
+          if (!o) {
+            setSelected(null);
+            setActionError(null);
+          }
         }}
         title={selected ? `${selected.id} — ${selected.title}` : "Bug"}
-        description={selected ? `Created ${formatRelative(selected.created_at)} ago` : undefined}
+        width={560}
       >
-        {selected ? (
-          <BugDetail bug={selected} onPatch={handlePatch} />
+        {!selected ? (
+          <LoadingState />
         ) : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <BugDetailView
+            bug={selected}
+            actionError={actionError}
+            onStatus={handleStatus}
+          />
         )}
       </DetailDrawer>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create bug</DialogTitle>
+            <DialogDescription>
+              ID is generated automatically (BUG-001, BUG-002, …).
+            </DialogDescription>
+          </DialogHeader>
+          <CreateBugForm
+            onSubmit={handleCreate}
+            onCancel={() => setCreateOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Create form
+// Detail drawer body
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BugDetailView({
+  bug,
+  actionError,
+  onStatus,
+}: {
+  bug: Bug;
+  actionError: string | null;
+  onStatus: (id: string, next: BugStatus) => Promise<void>;
+}) {
+  const next = NEXT_STATUS[bug.status];
+
+  return (
+    <div>
+      {/* Chip strip */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 20,
+          alignItems: "center",
+        }}
+      >
+        <SevChip sev={bug.severity} />
+        <Chip status={bug.status} />
+        <span
+          style={{
+            fontSize: 12,
+            color: "#777D86",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          {IC.clock} {formatShortDate(bug.created_at)}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            color: "#24262B",
+            marginLeft: "auto",
+            fontWeight: 500,
+          }}
+        >
+          Owner: {bug.owner ?? "—"}
+        </span>
+      </div>
+
+      {/* DetailRow list */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          marginBottom: 20,
+        }}
+      >
+        <DetailRow label="Affected Area" value={bug.area} />
+        <DetailRow label="Reporter" value={bug.reporter_name ?? "—"} />
+        <DetailRow label="Device / Context" value={bug.device ?? "—"} />
+      </div>
+
+      {/* Description */}
+      <Section label="Description">
+        <div
+          style={{
+            fontSize: 13,
+            color: "#24262B",
+            lineHeight: 1.6,
+            padding: "10px 14px",
+            background: "#F7F8FA",
+            borderRadius: 8,
+            border: "1px solid #EDF0F3",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {bug.description || (
+            <span style={{ color: "#B6C7D6", fontStyle: "italic" }}>
+              No description provided.
+            </span>
+          )}
+        </div>
+      </Section>
+
+      {/* Steps to reproduce — only render when present */}
+      {bug.steps && (
+        <Section label="Steps to Reproduce">
+          <pre
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: "#24262B",
+              lineHeight: 1.6,
+              padding: "10px 14px",
+              background: "#F7F8FA",
+              borderRadius: 8,
+              border: "1px solid #EDF0F3",
+              whiteSpace: "pre-wrap",
+              fontFamily: "monospace",
+            }}
+          >
+            {bug.steps}
+          </pre>
+        </Section>
+      )}
+
+      {/* Logs — always render, even when empty (matches design) */}
+      <Section label="Logs">
+        <div
+          style={{
+            padding: "10px 14px",
+            background: "#17202A",
+            borderRadius: 8,
+            minHeight: 60,
+            fontSize: 12,
+            color: "#A7F3D0",
+            fontFamily: "monospace",
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {bug.logs || <span style={{ color: "#555B63" }}># No logs attached</span>}
+        </div>
+      </Section>
+
+      {actionError && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#EF4B4B",
+            background: "#FFF1F1",
+            padding: "8px 12px",
+            borderRadius: 8,
+            marginBottom: 12,
+          }}
+          role="alert"
+        >
+          {actionError}
+        </div>
+      )}
+
+      {/* Action buttons (status state machine) */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {next && (
+          <Btn
+            variant="brand"
+            size="sm"
+            onClick={() => onStatus(bug.id, next)}
+          >
+            {IC.arrowUp} Move to {statusLabel(next)}
+          </Btn>
+        )}
+        {bug.status !== "closed" && (
+          <Btn
+            variant="secondary"
+            size="sm"
+            onClick={() => onStatus(bug.id, "closed")}
+          >
+            {IC.x} Close
+          </Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#777D86",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Create bug form (kept from prior implementation; design doesn't rework this)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CreateBugForm({
@@ -350,32 +611,44 @@ function CreateBugForm({
     }
   }
 
+  const inputStyle: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: 13,
+    border: "1px solid #EDF0F3",
+    borderRadius: 8,
+    padding: "6px 10px",
+    outline: "none",
+    background: "#fff",
+    color: "#24262B",
+    width: "100%",
+    boxSizing: "border-box",
+  };
+
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="space-y-1">
-        <label className="text-xs font-medium">Title</label>
-        <Input
+    <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Field label="Title">
+        <input
           required
           autoFocus
           maxLength={200}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="One-line summary"
+          style={inputStyle}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Area</label>
-          <Input
+      </Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Area">
+          <input
             required
             maxLength={64}
             value={area}
             onChange={(e) => setArea(e.target.value)}
             placeholder="liff / admin / fetch-aqi …"
+            style={inputStyle}
           />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Severity</label>
+        </Field>
+        <Field label="Severity">
           <Select
             value={severity}
             onValueChange={(v) => setSeverity(v as BugSeverity)}
@@ -391,312 +664,56 @@ function CreateBugForm({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       </div>
-      <div className="space-y-1">
-        <label className="text-xs font-medium">Description (optional)</label>
+      <Field label="Description (optional)">
         <textarea
           maxLength={4000}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
-          className="w-full rounded-md border bg-transparent p-2 text-sm"
-          placeholder="What's broken? Reproduction steps go in the detail drawer after creation."
+          placeholder="What's broken?  Reproduction steps go in the detail drawer after creation."
+          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.55 }}
         />
-      </div>
+      </Field>
       {error && (
-        <p className="text-sm text-destructive" role="alert">
+        <p style={{ fontSize: 13, color: "#EF4B4B", margin: 0 }} role="alert">
           {error}
         </p>
       )}
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Btn variant="ghost" onClick={onCancel}>
           Cancel
-        </Button>
-        <Button type="submit" disabled={submitting}>
+        </Btn>
+        <Btn variant="primary" type="submit" disabled={submitting}>
           {submitting ? "Creating…" : "Create"}
-        </Button>
+        </Btn>
       </DialogFooter>
     </form>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Detail / edit
-// ─────────────────────────────────────────────────────────────────────────────
-
-function BugDetail({
-  bug,
-  onPatch,
-}: {
-  bug: Bug;
-  onPatch: (id: string, patch: BugPatch) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<BugPatch>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  function startEdit() {
-    setDraft({
-      title: bug.title,
-      description: bug.description,
-      steps: bug.steps,
-      device: bug.device,
-      logs: bug.logs,
-      severity: bug.severity,
-      area: bug.area,
-      status: bug.status,
-      owner: bug.owner,
-      reporter_name: bug.reporter_name,
-    });
-    setEditing(true);
-    setError(null);
-  }
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      // Diff against current bug — only send fields that changed.
-      const patch: BugPatch = {};
-      for (const [k, v] of Object.entries(draft)) {
-        const key = k as keyof BugPatch;
-        if (v !== bug[key]) {
-          (patch as Record<string, unknown>)[key] = v ?? null;
-        }
-      }
-      if (Object.keys(patch).length === 0) {
-        setEditing(false);
-        return;
-      }
-      await onPatch(bug.id, patch);
-      setEditing(false);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function quickStatus(next: BugStatus) {
-    setError(null);
-    try {
-      await onPatch(bug.id, { status: next });
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  if (!editing) {
-    return (
-      <div className="space-y-4 pt-4">
-        <div className="flex flex-wrap gap-2">
-          <Badge className={SEVERITY_STYLE[bug.severity]} variant="secondary">
-            {bug.severity}
-          </Badge>
-          <Badge className={STATUS_STYLE[bug.status]} variant="secondary">
-            {bug.status}
-          </Badge>
-          <Badge variant="secondary">{bug.area}</Badge>
-        </div>
-
-        <Field label="Description" value={bug.description} />
-        <Field label="Steps to reproduce" value={bug.steps} />
-        <Field label="Device" value={bug.device} />
-        <Field label="Logs" value={bug.logs} mono />
-        <Field label="Owner" value={bug.owner} />
-        <Field label="Reporter" value={bug.reporter_name} />
-
-        <div className="space-y-2 border-t pt-3">
-          <div className="text-xs font-medium text-muted-foreground">
-            Quick status change
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {STATUS_OPTIONS.filter((s) => s !== bug.status).map((s) => (
-              <Button
-                key={s}
-                size="sm"
-                variant="outline"
-                onClick={() => quickStatus(s)}
-              >
-                → {s}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <Button onClick={startEdit}>Edit</Button>
-      </div>
-    );
-  }
-
-  // Edit mode
-  return (
-    <div className="space-y-3 pt-4">
-      <EditField
-        label="Title"
-        value={draft.title ?? ""}
-        onChange={(v) => setDraft({ ...draft, title: v })}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Severity</label>
-          <Select
-            value={draft.severity}
-            onValueChange={(v) =>
-              setDraft({ ...draft, severity: v as BugSeverity })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEVERITY_OPTIONS.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium">Status</label>
-          <Select
-            value={draft.status}
-            onValueChange={(v) => setDraft({ ...draft, status: v as BugStatus })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <EditField
-        label="Area"
-        value={draft.area ?? ""}
-        onChange={(v) => setDraft({ ...draft, area: v })}
-      />
-      <EditField
-        label="Owner"
-        value={draft.owner ?? ""}
-        onChange={(v) => setDraft({ ...draft, owner: v || null })}
-      />
-      <EditField
-        label="Reporter name"
-        value={draft.reporter_name ?? ""}
-        onChange={(v) => setDraft({ ...draft, reporter_name: v || null })}
-      />
-      <EditTextarea
-        label="Description"
-        value={draft.description ?? ""}
-        onChange={(v) => setDraft({ ...draft, description: v || null })}
-      />
-      <EditTextarea
-        label="Steps to reproduce"
-        value={draft.steps ?? ""}
-        onChange={(v) => setDraft({ ...draft, steps: v || null })}
-      />
-      <EditField
-        label="Device"
-        value={draft.device ?? ""}
-        onChange={(v) => setDraft({ ...draft, device: v || null })}
-      />
-      <EditTextarea
-        label="Logs"
-        value={draft.logs ?? ""}
-        onChange={(v) => setDraft({ ...draft, logs: v || null })}
-        mono
-      />
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <div className="flex gap-2">
-        <Button onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        <Button variant="ghost" onClick={() => setEditing(false)}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function Field({
   label,
-  value,
-  mono,
+  children,
 }: {
   label: string;
-  value: string | null;
-  mono?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div
-        className={cn(
-          "mt-1 whitespace-pre-wrap text-sm",
-          !value && "text-muted-foreground italic",
-          mono && "font-mono text-xs"
-        )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#777D86",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
       >
-        {value || "—"}
-      </div>
-    </div>
-  );
-}
-
-function EditField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium">{label}</label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
-    </div>
-  );
-}
-
-function EditTextarea({
-  label,
-  value,
-  onChange,
-  mono,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  mono?: boolean;
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium">{label}</label>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={4}
-        className={cn(
-          "w-full rounded-md border bg-transparent p-2 text-sm",
-          mono && "font-mono text-xs"
-        )}
-      />
+        {label}
+      </label>
+      {children}
     </div>
   );
 }
