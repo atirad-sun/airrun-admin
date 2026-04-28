@@ -86,3 +86,106 @@ export interface PingResponse {
 export function pingWrite(): Promise<PingResponse> {
   return adminWrite<PingResponse>("ping");
 }
+
+// ── Bugs ──
+
+export type BugSeverity = "low" | "medium" | "high" | "critical";
+export type BugStatus =
+  | "open"
+  | "triaged"
+  | "in_progress"
+  | "fixed"
+  | "closed";
+
+export interface BugListRow {
+  id: string;
+  title: string;
+  severity: BugSeverity;
+  area: string;
+  status: BugStatus;
+  owner: string | null;
+  reporter_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bug extends BugListRow {
+  description: string | null;
+  steps: string | null;
+  device: string | null;
+  logs: string | null;
+  reporter_user_id: string | null;
+}
+
+export interface BugsListResponse {
+  bugs: BugListRow[];
+}
+
+export interface BugFilters {
+  status?: BugStatus | BugStatus[];
+  severity?: BugSeverity;
+  area?: string;
+  limit?: number;
+}
+
+export function fetchBugs(filters: BugFilters = {}): Promise<BugsListResponse> {
+  const args: Record<string, unknown> = {};
+  if (filters.status) {
+    args.status = Array.isArray(filters.status)
+      ? filters.status.join(",")
+      : filters.status;
+  }
+  if (filters.severity) args.severity = filters.severity;
+  if (filters.area) args.area = filters.area;
+  if (filters.limit) args.limit = filters.limit;
+  return adminRead<BugsListResponse>("bugs", args);
+}
+
+export function fetchBug(id: string): Promise<{ bug: Bug }> {
+  return adminRead<{ bug: Bug }>("bug", { id });
+}
+
+export interface CreateBugInput {
+  title: string;
+  description?: string;
+  steps?: string;
+  device?: string;
+  logs?: string;
+  severity: BugSeverity;
+  area: string;
+  status?: BugStatus;
+  reporter_name?: string;
+  owner?: string;
+}
+
+export function createBug(
+  input: CreateBugInput
+): Promise<{ bug: Bug }> {
+  return adminWrite<{ bug: Bug }>(
+    "create-bug",
+    input as unknown as Record<string, unknown>
+  );
+}
+
+export type BugPatch = Partial<
+  Pick<
+    Bug,
+    | "title"
+    | "description"
+    | "steps"
+    | "device"
+    | "logs"
+    | "severity"
+    | "area"
+    | "status"
+    | "owner"
+    | "reporter_name"
+  >
+>;
+
+export function patchBug(
+  id: string,
+  patch: BugPatch
+): Promise<{ bug: Bug }> {
+  return adminWrite<{ bug: Bug }>("patch-bug", { id, patch });
+}
