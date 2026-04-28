@@ -1,98 +1,241 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+// Design-faithful port of airrun-design/project/admin-base.jsx:154-215.
+// Replaces the prior shadcn-Table wrap; this version owns its own <table>
+// markup so cell padding, header tint, hover bg, and sort icons match the
+// design pixel-for-pixel.
+
+import { useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { IC } from "./icons";
 
 export interface Column<T> {
   key: string;
-  header: string;
-  /** How to render the cell. Receives the row; can return any ReactNode. */
-  cell: (row: T) => React.ReactNode;
-  /** Tailwind classes applied to <td> for this column (alignment, width hints). */
+  /** Design API. */
+  label?: ReactNode;
+  /** How to render the cell. Receives both the row's value at `key` and the row itself. */
+  render?: (value: unknown, row: T) => ReactNode;
+  sortable?: boolean;
+  maxWidth?: number | string;
+  cellStyle?: CSSProperties;
+
+  // Phase-C back-compat (Bugs screen) — will be removed once R3 rewrites Bugs
+  // against the design API. Don't add new uses.
+  header?: ReactNode;
+  cell?: (row: T) => ReactNode;
   className?: string;
-  /** If true, this column gets `w-full` so other columns shrink to content. */
   fill?: boolean;
 }
 
-interface DataTableProps<T> {
-  columns: Column<T>[];
+interface DataTableProps<T extends { id: string | number }> {
+  cols?: Column<T>[];
   rows: T[];
-  /** Extracts a stable key from the row; usually `(r) => r.id`. */
-  rowKey: (row: T) => string;
-  /** Click handler — used to open a detail drawer on row click. */
+  onRow?: (row: T) => void;
+  emptyMsg?: string;
+  selectedIds?: Array<T["id"]>;
+  onSelect?: (ids: Array<T["id"]>) => void;
+
+  // Phase-C back-compat aliases (see note above).
+  columns?: Column<T>[];
+  rowKey?: (row: T) => string;
   onRowClick?: (row: T) => void;
-  /** Shown when `rows` is empty. */
   emptyMessage?: string;
   loading?: boolean;
 }
 
-/**
- * Lean, generic table built on shadcn Table.
- *
- * Intentionally minimal: no sorting, no virtualization, no built-in pagination.
- * For v1 the admin lists are < 200 rows hard-capped at the API; that's well
- * within "render everything." Promote complexity here when a screen actually
- * needs it.
- */
-export default function DataTable<T>({
-  columns,
+type SortDir = "asc" | "desc";
+
+export default function DataTable<T extends { id: string | number }>({
+  cols,
   rows,
-  rowKey,
+  onRow,
+  emptyMsg,
+  selectedIds,
+  onSelect,
+  columns,
   onRowClick,
-  emptyMessage = "No rows.",
-  loading = false,
+  emptyMessage,
+  loading,
 }: DataTableProps<T>) {
+  const effectiveCols = cols ?? columns ?? [];
+  const effectiveOnRow = onRow ?? onRowClick;
+  const effectiveEmpty = emptyMsg ?? emptyMessage ?? "No records found.";
+
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const toggleSort = (key: string) => {
+    if (sortCol === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sorted = useMemo(() => {
+    if (!sortCol) return rows;
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = (a as Record<string, unknown>)[sortCol];
+      const bv = (b as Record<string, unknown>)[sortCol];
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      // unknown comparison — relies on JS coercion which is fine for the
+      // mixed string/number columns we actually feed this.
+      return ((av as number | string) > (bv as number | string) ? 1 : -1) *
+        (sortDir === "asc" ? 1 : -1);
+    });
+    return copy;
+  }, [rows, sortCol, sortDir]);
+
+  const selectedSet = new Set(selectedIds ?? []);
+  const allSelected = rows.length > 0 && selectedSet.size === rows.length;
+  const cols2 = effectiveCols;
+
   if (loading) {
     return (
-      <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+      <div
+        style={{
+          padding: 24,
+          textAlign: "center",
+          color: "#777D86",
+          fontSize: 13,
+          background: "#fff",
+          border: "1px solid #EDF0F3",
+          borderRadius: 8,
+        }}
+      >
         Loading…
-      </div>
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
-        {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((c) => (
-              <TableHead
-                key={c.key}
-                className={cn(c.fill && "w-full", c.className)}
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #EDF0F3" }}>
+            {onSelect && (
+              <th style={{ width: 36, padding: "8px 12px", textAlign: "left" }}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(e) =>
+                    onSelect(e.target.checked ? rows.map((r) => r.id) : [])
+                  }
+                />
+              </th>
+            )}
+            {cols2.map((col) => (
+              <th
+                key={col.key}
+                onClick={col.sortable ? () => toggleSort(col.key) : undefined}
+                style={{
+                  padding: "8px 12px",
+                  textAlign: "left",
+                  color: "#777D86",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                  cursor: col.sortable ? "pointer" : "default",
+                  userSelect: "none",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
               >
-                {c.header}
-              </TableHead>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  {col.label ?? col.header}
+                  {col.sortable && sortCol === col.key && (
+                    <span style={{ color: "#24262B" }}>
+                      {sortDir === "asc" ? IC.arrowUp : IC.arrowDown}
+                    </span>
+                  )}
+                </span>
+              </th>
             ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <TableRow
-              key={rowKey(row)}
-              className={cn(onRowClick && "cursor-pointer")}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-            >
-              {columns.map((c) => (
-                <TableCell key={c.key} className={c.className}>
-                  {c.cell(row)}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.length === 0 && (
+            <tr>
+              <td
+                colSpan={cols2.length + (onSelect ? 1 : 0)}
+                style={{
+                  padding: "32px 12px",
+                  textAlign: "center",
+                  color: "#777D86",
+                }}
+              >
+                {effectiveEmpty}
+              </td>
+            </tr>
+          )}
+          {sorted.map((row) => {
+            const isSelected = selectedSet.has(row.id);
+            return (
+              <tr
+                key={row.id}
+                onClick={effectiveOnRow ? () => effectiveOnRow(row) : undefined}
+                style={{
+                  borderBottom: "1px solid #EDF0F3",
+                  cursor: effectiveOnRow ? "pointer" : "default",
+                  background: isSelected ? "#F0FDF8" : "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (effectiveOnRow) {
+                    e.currentTarget.style.background = isSelected
+                      ? "#E8FBF4"
+                      : "#F7F8FA";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = isSelected
+                    ? "#F0FDF8"
+                    : "transparent";
+                }}
+              >
+                {onSelect && (
+                  <td
+                    style={{ padding: "10px 12px" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...(selectedIds ?? []), row.id]
+                          : (selectedIds ?? []).filter((id) => id !== row.id);
+                        onSelect(next);
+                      }}
+                    />
+                  </td>
+                )}
+                {cols2.map((col) => {
+                  const raw = (row as Record<string, unknown>)[col.key];
+                  return (
+                    <td
+                      key={col.key}
+                      style={{
+                        padding: "10px 12px",
+                        color: "#24262B",
+                        verticalAlign: "middle",
+                        maxWidth: col.maxWidth ?? "none",
+                        ...col.cellStyle,
+                      }}
+                    >
+                      {col.cell
+                        ? col.cell(row)
+                        : col.render
+                          ? col.render(raw, row)
+                          : (raw as ReactNode)}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
