@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signInWithPassword } from "@/lib/auth";
@@ -11,6 +12,7 @@ function friendlyError(message: string): string {
 }
 
 export default function Login() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -26,8 +28,11 @@ export default function Login() {
       setError(friendlyError(error.message));
       return;
     }
-    // On success, RequireAuth's onAuthStateChange listener flips to "in"
-    // and react-router renders the admin shell — no manual navigate needed.
+    // RequireAuth lives only on protected routes — its onAuthStateChange
+    // listener doesn't exist while we're on /login.  Push to / explicitly so
+    // RequireAuth mounts, picks up the just-stored session, and renders the
+    // admin shell.
+    navigate("/", { replace: true });
   }
 
   return (
