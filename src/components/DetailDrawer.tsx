@@ -13,9 +13,6 @@ interface DetailDrawerProps {
   title: ReactNode;
   children: ReactNode;
   width?: number;
-  /** Phase-C back-compat: surfaced beneath the title.  Will be dropped once
-   *  R3 rewrites Bugs against the chip-strip + DetailRow pattern. */
-  description?: ReactNode;
 }
 
 export default function DetailDrawer({
@@ -24,7 +21,6 @@ export default function DetailDrawer({
   title,
   children,
   width = 520,
-  description,
 }: DetailDrawerProps) {
   // Esc to close — mirrors shadcn Sheet behavior.
   useEffect(() => {
@@ -76,14 +72,9 @@ export default function DetailDrawer({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: "#24262B" }}>
-              {title}
-            </span>
-            {description && (
-              <span style={{ fontSize: 12, color: "#777D86" }}>{description}</span>
-            )}
-          </div>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "#24262B" }}>
+            {title}
+          </span>
           <button
             onClick={() => onOpenChange(false)}
             style={{

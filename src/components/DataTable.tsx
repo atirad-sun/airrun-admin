@@ -1,7 +1,11 @@
 // Design-faithful port of airrun-design/project/admin-base.jsx:154-215.
-// Replaces the prior shadcn-Table wrap; this version owns its own <table>
-// markup so cell padding, header tint, hover bg, and sort icons match the
-// design pixel-for-pixel.
+// Owns its own <table> markup so cell padding, header tint, hover bg, and
+// sort icons match the design pixel-for-pixel.
+//
+// R3 dropped the back-compat aliases (columns/rowKey/onRowClick/loading/
+// emptyMessage/cell/header) that R1 added to keep the pre-rewrite Bugs
+// screen compiling.  The current Bugs screen uses the design API directly,
+// and Overview doesn't use DataTable at all.
 
 import { useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -9,36 +13,21 @@ import { IC } from "./icons";
 
 export interface Column<T> {
   key: string;
-  /** Design API. */
-  label?: ReactNode;
-  /** How to render the cell. Receives both the row's value at `key` and the row itself. */
+  label: ReactNode;
+  /** How to render the cell. Receives the row's value at `key` and the row itself. */
   render?: (value: unknown, row: T) => ReactNode;
   sortable?: boolean;
   maxWidth?: number | string;
   cellStyle?: CSSProperties;
-
-  // Phase-C back-compat (Bugs screen) — will be removed once R3 rewrites Bugs
-  // against the design API. Don't add new uses.
-  header?: ReactNode;
-  cell?: (row: T) => ReactNode;
-  className?: string;
-  fill?: boolean;
 }
 
 interface DataTableProps<T extends { id: string | number }> {
-  cols?: Column<T>[];
+  cols: Column<T>[];
   rows: T[];
   onRow?: (row: T) => void;
   emptyMsg?: string;
   selectedIds?: Array<T["id"]>;
   onSelect?: (ids: Array<T["id"]>) => void;
-
-  // Phase-C back-compat aliases (see note above).
-  columns?: Column<T>[];
-  rowKey?: (row: T) => string;
-  onRowClick?: (row: T) => void;
-  emptyMessage?: string;
-  loading?: boolean;
 }
 
 type SortDir = "asc" | "desc";
@@ -47,18 +36,10 @@ export default function DataTable<T extends { id: string | number }>({
   cols,
   rows,
   onRow,
-  emptyMsg,
+  emptyMsg = "No records found.",
   selectedIds,
   onSelect,
-  columns,
-  onRowClick,
-  emptyMessage,
-  loading,
 }: DataTableProps<T>) {
-  const effectiveCols = cols ?? columns ?? [];
-  const effectiveOnRow = onRow ?? onRowClick;
-  const effectiveEmpty = emptyMsg ?? emptyMessage ?? "No records found.";
-
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -79,8 +60,8 @@ export default function DataTable<T extends { id: string | number }>({
       const bv = (b as Record<string, unknown>)[sortCol];
       if (av == null) return 1;
       if (bv == null) return -1;
-      // unknown comparison — relies on JS coercion which is fine for the
-      // mixed string/number columns we actually feed this.
+      // Relies on JS string/number coercion — fine for the mixed columns
+      // we actually feed this (titles, severities, ISO dates).
       return ((av as number | string) > (bv as number | string) ? 1 : -1) *
         (sortDir === "asc" ? 1 : -1);
     });
@@ -89,25 +70,6 @@ export default function DataTable<T extends { id: string | number }>({
 
   const selectedSet = new Set(selectedIds ?? []);
   const allSelected = rows.length > 0 && selectedSet.size === rows.length;
-  const cols2 = effectiveCols;
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          padding: 24,
-          textAlign: "center",
-          color: "#777D86",
-          fontSize: 13,
-          background: "#fff",
-          border: "1px solid #EDF0F3",
-          borderRadius: 8,
-        }}
-      >
-        Loading…
-      </div>
-    );
-  }
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -125,7 +87,7 @@ export default function DataTable<T extends { id: string | number }>({
                 />
               </th>
             )}
-            {cols2.map((col) => (
+            {cols.map((col) => (
               <th
                 key={col.key}
                 onClick={col.sortable ? () => toggleSort(col.key) : undefined}
@@ -143,7 +105,7 @@ export default function DataTable<T extends { id: string | number }>({
                 }}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                  {col.label ?? col.header}
+                  {col.label}
                   {col.sortable && sortCol === col.key && (
                     <span style={{ color: "#24262B" }}>
                       {sortDir === "asc" ? IC.arrowUp : IC.arrowDown}
@@ -158,14 +120,14 @@ export default function DataTable<T extends { id: string | number }>({
           {sorted.length === 0 && (
             <tr>
               <td
-                colSpan={cols2.length + (onSelect ? 1 : 0)}
+                colSpan={cols.length + (onSelect ? 1 : 0)}
                 style={{
                   padding: "32px 12px",
                   textAlign: "center",
                   color: "#777D86",
                 }}
               >
-                {effectiveEmpty}
+                {emptyMsg}
               </td>
             </tr>
           )}
@@ -174,14 +136,14 @@ export default function DataTable<T extends { id: string | number }>({
             return (
               <tr
                 key={row.id}
-                onClick={effectiveOnRow ? () => effectiveOnRow(row) : undefined}
+                onClick={onRow ? () => onRow(row) : undefined}
                 style={{
                   borderBottom: "1px solid #EDF0F3",
-                  cursor: effectiveOnRow ? "pointer" : "default",
+                  cursor: onRow ? "pointer" : "default",
                   background: isSelected ? "#F0FDF8" : "transparent",
                 }}
                 onMouseEnter={(e) => {
-                  if (effectiveOnRow) {
+                  if (onRow) {
                     e.currentTarget.style.background = isSelected
                       ? "#E8FBF4"
                       : "#F7F8FA";
@@ -210,7 +172,7 @@ export default function DataTable<T extends { id: string | number }>({
                     />
                   </td>
                 )}
-                {cols2.map((col) => {
+                {cols.map((col) => {
                   const raw = (row as Record<string, unknown>)[col.key];
                   return (
                     <td
@@ -223,11 +185,7 @@ export default function DataTable<T extends { id: string | number }>({
                         ...col.cellStyle,
                       }}
                     >
-                      {col.cell
-                        ? col.cell(row)
-                        : col.render
-                          ? col.render(raw, row)
-                          : (raw as ReactNode)}
+                      {col.render ? col.render(raw, row) : (raw as ReactNode)}
                     </td>
                   );
                 })}
