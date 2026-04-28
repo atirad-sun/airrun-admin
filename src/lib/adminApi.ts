@@ -1,67 +1,88 @@
 import { supabase } from "./supabase";
 
 /**
- * Typed wrapper around the `admin-api` Edge Function. Every call:
- *   1. Pulls the current Supabase Auth JWT.
- *   2. Hits `${VITE_SUPABASE_URL}/functions/v1/admin-api/<path>` with it.
- *   3. Throws on non-2xx with the error body for inspection.
+ * Typed wrapper around the admin-api Edge Functions.
  *
- * The Edge Function gates each request through `is_admin(auth.uid())` and
- * service_role-queries the underlying tables.
+ * Two functions, separated read/write:
+ *   - admin-api-read   — pure reads (and one self-write: admins.last_login)
+ *   - admin-api-write  — mutations + audit log
+ *
+ * Both follow the secure-api precedent: POST + JSON body with `{ action, ... }`.
+ * Each call:
+ *   1. Pulls the current Supabase Auth JWT.
+ *   2. POSTs to /functions/v1/<fn-name> with `Authorization: Bearer <jwt>`.
+ *   3. Throws an Error with the response body on non-2xx.
+ *
+ * The function code gates each request through `is_admin(auth.uid())` and
+ * service-role-queries the underlying tables.
  */
 
-const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api`;
+const FN_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-async function authedFetch(
-  path: string,
-  init: RequestInit = {}
-): Promise<Response> {
+async function callFunction<T = unknown>(
+  fn: "admin-api-read" | "admin-api-write",
+  body: { action: string } & Record<string, unknown>
+): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error("Not authenticated");
 
-  return fetch(`${FN_URL}${path}`, {
-    ...init,
+  const res = await fetch(`${FN_BASE}/${fn}`, {
+    method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
-      ...(init.headers ?? {}),
     },
-  });
-}
-
-export async function adminGet<T = unknown>(path: string): Promise<T> {
-  const res = await authedFetch(path);
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as T;
-}
-
-export async function adminPost<T = unknown>(
-  path: string,
-  body: unknown
-): Promise<T> {
-  const res = await authedFetch(path, {
-    method: "POST",
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `${fn} ${body.action} failed (${res.status}): ${text || res.statusText}`
+    );
+  }
   return (await res.json()) as T;
 }
 
-export async function adminPatch<T = unknown>(
-  path: string,
-  body: unknown
+export function adminRead<T = unknown>(
+  action: string,
+  args: Record<string, unknown> = {}
 ): Promise<T> {
-  const res = await authedFetch(path, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as T;
+  return callFunction<T>("admin-api-read", { action, ...args });
 }
 
-export async function adminDelete<T = unknown>(path: string): Promise<T> {
-  const res = await authedFetch(path, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as T;
+export function adminWrite<T = unknown>(
+  action: string,
+  args: Record<string, unknown> = {}
+): Promise<T> {
+  return callFunction<T>("admin-api-write", { action, ...args });
+}
+
+// ── Typed action shapes ──
+
+export interface OverviewResponse {
+  counts: {
+    parks: number;
+    users: number;
+    reports_total: number;
+    reports_today: number;
+    bugs_open: number;
+    feedback_total: number;
+  };
+  aqi_distribution: { band: string; count: number }[];
+  activity: { kind: string; created_at: string; summary: string }[];
+}
+
+export function fetchOverview(): Promise<OverviewResponse> {
+  return adminRead<OverviewResponse>("overview");
+}
+
+export interface PingResponse {
+  ok: true;
+  caller: { email: string; role: "super_admin" | "editor" | "viewer" };
+}
+
+export function pingWrite(): Promise<PingResponse> {
+  return adminWrite<PingResponse>("ping");
 }
