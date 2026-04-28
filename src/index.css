@@ -3,59 +3,68 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ──────────────────────────────────────────────────────────────────────── */
-/* Theme tokens — shadcn neutral base + airrun brand green                  */
-/* Real values for a prototype-faithful match to the design come in a       */
-/* follow-up; these defaults are enough to render the scaffold cleanly.     */
-/* ──────────────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────────
+ * airrun design tokens (hex, source of truth — see airrun-design/project/)
+ * shadcn primitives consume these via the --background/--foreground/etc.
+ * mapping below.  Don't add an oklch token here — every color the design
+ * uses is already in this hex set.
+ * ──────────────────────────────────────────────────────────────────────── */
 
 :root {
-  --radius: 0.625rem;
+  /* Primary palette — Admin Dashboard.html:15-26 */
+  --airrun-ink: #24262b;
+  --airrun-muted: #777d86;
+  --airrun-line: #edf0f3;
+  --airrun-brand: #04dc9a;
+  --airrun-surface: #f7f8fa;
+  --airrun-panel: #ffffff;
+  --airrun-good: #13b981;
+  --airrun-route: #1888ff;
+  --airrun-moderate: #f7b731;
+  --airrun-poor: #ef4b4b;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /* Extras the JSX uses — admin-base.jsx + admin-shell.jsx */
+  --airrun-very-muted: #b6c7d6;
+  --airrun-mint-bg: #f0fdf8;
+  --airrun-mint-border: #a7f3d0;
+  --airrun-yellow-bg: #fffbeb;
+  --airrun-red-bg: #fff1f1;
+  --airrun-blue-bg: #ebf3ff;
+  --airrun-purple-bg: #f5f3ff;
+  --airrun-purple: #7c3aed;
+  --airrun-cyan: #5ad7ff;
+  --airrun-cyan-bg: #f0fbff;
+  --airrun-very-light: #f0f4f8;
+  --airrun-brand-deep: #0a6e4e;
+  --airrun-brand-text: #04a074;
+  --airrun-dark-strip: #17202a;
+  --airrun-row-hover: #f7f8fa;
+  --airrun-row-selected-hover: #e8fbf4;
 
-  /* airrun brand green #04dc9a — translated to oklch */
-  --primary: oklch(0.78 0.18 165);
-  --primary-foreground: oklch(0.145 0 0);
+  --radius: 0.5rem;
 
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.78 0.18 165);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.78 0.18 165);
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.78 0.18 165);
+  /* shadcn token map — primitives keep working, but they now resolve to
+     airrun hex values, so shadcn Dialog / Sheet / Select etc. inherit the
+     design language without per-component restyling. */
+  --background: var(--airrun-surface);
+  --foreground: var(--airrun-ink);
+  --card: var(--airrun-panel);
+  --card-foreground: var(--airrun-ink);
+  --popover: var(--airrun-panel);
+  --popover-foreground: var(--airrun-ink);
+  --primary: var(--airrun-brand);
+  --primary-foreground: #0a2e22;
+  --secondary: var(--airrun-surface);
+  --secondary-foreground: var(--airrun-ink);
+  --muted: var(--airrun-surface);
+  --muted-foreground: var(--airrun-muted);
+  --accent: var(--airrun-mint-bg);
+  --accent-foreground: var(--airrun-brand-deep);
+  --destructive: var(--airrun-poor);
+  --destructive-foreground: #ffffff;
+  --border: var(--airrun-line);
+  --input: var(--airrun-line);
+  --ring: var(--airrun-brand);
 }
 
 @theme inline {
@@ -92,12 +101,43 @@
   *,
   *::before,
   *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
     border-color: var(--border);
   }
+  html,
   body {
-    background-color: var(--background);
-    color: var(--foreground);
+    height: 100%;
+    background: var(--airrun-surface);
+  }
+  body {
+    color: var(--airrun-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--airrun-line);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d0d5dc;
 }
