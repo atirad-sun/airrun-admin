@@ -309,6 +309,25 @@ export function patchPark(
   return adminWrite<{ park: Park }>("patch-park", { id, patch });
 }
 
+// Add Park V1 — minimal create flow.  Only the fields the dialog
+// collects; the rest stay at their defaults (visible=false, verified=
+// false, name_en=name, station_distance_km=0) and are refined via the
+// existing Edit drawer.
+export interface CreateParkInput {
+  name: string;
+  district: string | null;
+  lat: number;
+  lng: number;
+  station_name: string | null;
+}
+
+export function createPark(input: CreateParkInput): Promise<{ park: Park }> {
+  return adminWrite<{ park: Park }>(
+    "create-park",
+    input as unknown as Record<string, unknown>
+  );
+}
+
 export function togglePark(
   id: string,
   visible: boolean
