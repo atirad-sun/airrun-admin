@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { queryClient } from "./queries";
 
 /**
  * Admin SPA auth helpers — email + password.
@@ -12,6 +13,13 @@ export async function signInWithPassword(email: string, password: string) {
 }
 
 export async function signOut() {
+  // Clear the react-query cache before tearing down the session so a
+  // subsequent sign-in on the same tab (e.g. switching from viewer to
+  // super-admin) doesn't inherit the previous user's cached caller
+  // role, parks list, etc.  RequireAuth's onAuthStateChange listener
+  // catches sign-outs that happen via session expiry / forced rotation;
+  // calling clear() here too is belt-and-braces for the manual button.
+  queryClient.clear();
   return supabase.auth.signOut();
 }
 

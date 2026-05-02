@@ -122,6 +122,11 @@ export interface PingResponse {
     role: "super_admin" | "editor" | "viewer";
     must_change_password: boolean;
   };
+  // Manifest of every action the deployed admin-api-write build
+  // implements.  Optional in the type so older deploys (pre-D1.2)
+  // still parse cleanly — readers should treat absence as "unknown,
+  // assume the action exists".
+  actions?: readonly string[];
 }
 
 export function pingWrite(): Promise<PingResponse> {
@@ -309,16 +314,20 @@ export function patchPark(
   return adminWrite<{ park: Park }>("patch-park", { id, patch });
 }
 
-// Add Park V1 — minimal create flow.  Only the fields the dialog
-// collects; the rest stay at their defaults (visible=false, verified=
-// false, name_en=name, station_distance_km=0) and are refined via the
-// existing Edit drawer.
+// Add Park V1.1 — server resolves the AQI station by id (or by
+// nearest-from-lat/lng if station_id is omitted) so the SPA only
+// needs to send the picked station id.  The remaining schema-
+// required fields (name_en, station_distance_km) and the
+// visible/verified flags are still defaulted server-side; ops
+// refines the rest via the Edit drawer.
 export interface CreateParkInput {
   name: string;
   district: string | null;
   lat: number;
   lng: number;
-  station_name: string | null;
+  // Air4Thai station id (e.g. "05t") from the aqi_stations table.
+  // Optional — backend picks nearest if omitted.
+  station_id: string | null;
 }
 
 export function createPark(input: CreateParkInput): Promise<{ park: Park }> {
@@ -326,6 +335,21 @@ export function createPark(input: CreateParkInput): Promise<{ park: Park }> {
     "create-park",
     input as unknown as Record<string, unknown>
   );
+}
+
+// AQI station picker source for the Add Park dialog.  ~15 rows
+// today; the Air4Thai station list rarely changes so we cache
+// indefinitely (staleTime: Infinity in the consuming useQuery).
+export interface AqiStation {
+  id: string;
+  name: string;
+  name_th: string;
+  lat: number;
+  lng: number;
+}
+
+export function fetchAqiStations(): Promise<{ stations: AqiStation[] }> {
+  return adminRead<{ stations: AqiStation[] }>("aqi-stations");
 }
 
 export function togglePark(

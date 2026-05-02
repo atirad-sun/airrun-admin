@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createBrowserRouter,
   Navigate,
@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router";
 import { supabase } from "@/lib/supabase";
+import { queryClient } from "@/lib/queries";
 import { useCallerRole } from "@/lib/useCallerRole";
 import AdminShell from "@/components/AdminShell";
 import Login from "@/screens/Login";
@@ -29,14 +30,32 @@ import ChangePassword from "@/screens/ChangePassword";
  */
 function RequireAuth() {
   const [status, setStatus] = useState<"checking" | "in" | "out">("checking");
+  // Track the last seen user id so we can detect a session change
+  // (sign-out + sign-in as a different user on the same tab) and
+  // evict cached data that belongs to the previous identity.  Plain
+  // SIGNED_OUT events are also handled, but Supabase will sometimes
+  // fire only TOKEN_REFRESHED when a new session takes the slot.
+  const lastUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
+      lastUserIdRef.current = data.session?.user.id ?? null;
       setStatus(data.session ? "in" : "out");
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextUserId = session?.user.id ?? null;
+      // Any user-id transition — sign-out, sign-in-as-different-user,
+      // or a token refresh that flipped identity — invalidates every
+      // cached query.  Same-user TOKEN_REFRESHED keeps the cache.
+      if (
+        event === "SIGNED_OUT" ||
+        nextUserId !== lastUserIdRef.current
+      ) {
+        queryClient.clear();
+      }
+      lastUserIdRef.current = nextUserId;
       setStatus(session ? "in" : "out");
     });
     return () => {
