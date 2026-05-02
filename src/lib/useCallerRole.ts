@@ -21,6 +21,9 @@ export interface CallerInfo {
   email: string;
   role: "super_admin" | "editor" | "viewer";
   isSuperAdmin: boolean;
+  // True for newly-invited admins until they rotate the temp password.
+  // RequireRotated reads this to bounce them to /change-password.
+  mustChangePassword: boolean;
 }
 
 export function useCallerRole(): {
@@ -40,6 +43,7 @@ export function useCallerRole(): {
       email: data.caller.email,
       role: data.caller.role,
       isSuperAdmin: data.caller.role === "super_admin",
+      mustChangePassword: data.caller.must_change_password === true,
     },
     isLoading,
   };

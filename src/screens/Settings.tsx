@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  changePassword,
   createAdmin,
   deleteAdmin,
   fetchAdmins,
@@ -60,6 +61,7 @@ const ROLE_OPTIONS: AdminRole[] = ["super_admin", "editor", "viewer"];
 
 const TAB_LIST = [
   { id: "admins", label: "Admin Users" },
+  { id: "account", label: "My Account" },
   { id: "datasource", label: "Data Sources" },
   { id: "notifications", label: "Notifications" },
   { id: "audit", label: "Audit Log" },
@@ -101,6 +103,7 @@ export default function Settings() {
         </div>
         <div style={{ padding: "24px 20px" }}>
           {tab === "admins" && <AdminsTab />}
+          {tab === "account" && <AccountTab />}
           {tab === "datasource" && <DataSourcesTab />}
           {tab === "notifications" && <NotificationsTab />}
           {tab === "audit" && <AuditTab />}
@@ -248,7 +251,8 @@ function AdminsTab() {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         onSubmitted={() => {
-          setInviteOpen(false);
+          // Refresh the admins list; the dialog stays open showing the
+          // one-time temp password until the inviter dismisses it.
           invalidateAdmins();
         }}
         onError={setActionError}
@@ -511,25 +515,61 @@ function InviteAdminDialog({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AdminRole>("viewer");
   const [submitting, setSubmitting] = useState(false);
+  // After a successful create, we hold the temp password locally and
+  // swap the dialog body to a "share this once" panel.  The inviter
+  // dismisses the dialog when they're done copying — we don't auto-close
+  // because the password is shown ONCE and lost on close.
+  const [createdEmail, setCreatedEmail] = useState<string | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [reusedExisting, setReusedExisting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const reset = () => {
     setEmail("");
     setRole("viewer");
     setSubmitting(false);
+    setCreatedEmail(null);
+    setTempPassword(null);
+    setReusedExisting(false);
+    setCopied(false);
   };
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await createAdmin({ email: email.trim(), role });
-      reset();
+      const submittedEmail = email.trim();
+      const result = await createAdmin({ email: submittedEmail, role });
+      // The list needs to refresh now that the admins row exists,
+      // even though we keep the dialog open showing the password.
       onSubmitted();
+      setCreatedEmail(submittedEmail);
+      if (result.tempPassword) {
+        setTempPassword(result.tempPassword);
+      } else {
+        // Re-invite of an existing auth user — no new password issued.
+        // Surface that explicitly so the inviter doesn't expect to copy
+        // a credential that doesn't exist.
+        setReusedExisting(true);
+      }
     } catch (err) {
       onError((err as Error).message);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleCopy = async () => {
+    if (!tempPassword) return;
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+    } catch {
+      // Clipboard can fail on insecure contexts or denied permission.
+      // The password is still visible on screen as a fallback.
+    }
+  };
+
+  const showingResult = createdEmail !== null;
 
   return (
     <Dialog
@@ -541,105 +581,353 @@ function InviteAdminDialog({
     >
       <DialogContent style={{ maxWidth: 420 }}>
         <DialogHeader>
-          <DialogTitle>Invite admin user</DialogTitle>
+          <DialogTitle>
+            {showingResult ? "Admin invited" : "Invite admin user"}
+          </DialogTitle>
         </DialogHeader>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#777D86",
-                display: "block",
-                marginBottom: 5,
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-              }}
-            >
-              Email address
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@airrun.app"
-              style={{
-                fontFamily: "inherit",
-                fontSize: 13,
-                border: "1px solid #EDF0F3",
-                borderRadius: 8,
-                padding: "8px 10px",
-                width: "100%",
-                color: "#24262B",
-                outline: "none",
-              }}
-            />
-          </div>
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "#777D86",
-                display: "block",
-                marginBottom: 5,
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-              }}
-            >
-              Role
-            </label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as AdminRole)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="viewer">Viewer — read-only access</SelectItem>
-                <SelectItem value="editor">
-                  Editor — can edit parks &amp; reports
-                </SelectItem>
-                <SelectItem value="super_admin">
-                  Super Admin — full access
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "#777D86",
-              padding: "8px 12px",
-              background: "#F7F8FA",
-              borderRadius: 8,
-              border: "1px solid #EDF0F3",
-              lineHeight: 1.5,
-            }}
-          >
-            The invitee will receive a magic-link to set their password and
-            land in the admin SPA.
-          </div>
-        </div>
-        <DialogFooter>
-          <Btn
-            variant="secondary"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            Cancel
-          </Btn>
-          <Btn
-            variant="brand"
-            onClick={() => void handleSubmit()}
-            disabled={submitting || email.trim().length === 0}
-          >
-            {IC.send} {submitting ? "Sending…" : "Send invite"}
-          </Btn>
-        </DialogFooter>
+
+        {!showingResult && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "#777D86",
+                    display: "block",
+                    marginBottom: 5,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@airrun.app"
+                  style={{
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    border: "1px solid #EDF0F3",
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    width: "100%",
+                    color: "#24262B",
+                    outline: "none",
+                  }}
+                />
+              </div>
+              <div>
+                <label
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "#777D86",
+                    display: "block",
+                    marginBottom: 5,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  Role
+                </label>
+                <Select
+                  value={role}
+                  onValueChange={(v) => setRole(v as AdminRole)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="viewer">Viewer — read-only access</SelectItem>
+                    <SelectItem value="editor">
+                      Editor — can edit parks &amp; reports
+                    </SelectItem>
+                    <SelectItem value="super_admin">
+                      Super Admin — full access
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#777D86",
+                  padding: "8px 12px",
+                  background: "#F7F8FA",
+                  borderRadius: 8,
+                  border: "1px solid #EDF0F3",
+                  lineHeight: 1.5,
+                }}
+              >
+                You'll see a one-time temporary password to share with the
+                invitee out-of-band. They will be forced to change it on
+                first sign-in.
+              </div>
+            </div>
+            <DialogFooter>
+              <Btn
+                variant="secondary"
+                onClick={() => onOpenChange(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Btn>
+              <Btn
+                variant="brand"
+                onClick={() => void handleSubmit()}
+                disabled={submitting || email.trim().length === 0}
+              >
+                {IC.send} {submitting ? "Sending…" : "Create invite"}
+              </Btn>
+            </DialogFooter>
+          </>
+        )}
+
+        {showingResult && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 13, color: "#24262B", lineHeight: 1.5 }}>
+                <strong>{createdEmail}</strong> can now sign in.
+              </div>
+
+              {tempPassword && (
+                <>
+                  <div>
+                    <label
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: "#777D86",
+                        display: "block",
+                        marginBottom: 5,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Temporary password
+                    </label>
+                    <div
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, monospace",
+                        fontSize: 14,
+                        border: "1px solid #EDF0F3",
+                        borderRadius: 8,
+                        padding: "10px 12px",
+                        background: "#F7F8FA",
+                        color: "#24262B",
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {tempPassword}
+                    </div>
+                  </div>
+                  <Btn variant="secondary" onClick={() => void handleCopy()}>
+                    {copied ? "Copied" : "Copy password"}
+                  </Btn>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#9A2A2A",
+                      padding: "8px 12px",
+                      background: "#FFF4F4",
+                      borderRadius: 8,
+                      border: "1px solid #F4D7D7",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Share this with the invitee out-of-band (1Password,
+                    DM). It will not be shown again. They will be forced
+                    to set a new password on first sign-in.
+                  </div>
+                </>
+              )}
+
+              {reusedExisting && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#777D86",
+                    padding: "8px 12px",
+                    background: "#F7F8FA",
+                    borderRadius: 8,
+                    border: "1px solid #EDF0F3",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  This email already had an account. The role/status was
+                  updated and no new password was issued. They keep their
+                  existing credentials.
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Btn variant="brand" onClick={() => onOpenChange(false)}>
+                Done
+              </Btn>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Account tab — change-your-own-password card.
+//
+// Forced first-login rotation lives at /change-password (see routes.tsx);
+// this card is for ongoing rotations once the user is in the shell.
+// Available to every admin role, not just super-admin.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AccountTab() {
+  const { caller, isLoading } = useCallerRole();
+  const [current, setCurrent] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const reset = () => {
+    setCurrent("");
+    setPwd("");
+    setConfirm("");
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    if (pwd.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (pwd !== confirm) {
+      setError("New passwords do not match.");
+      return;
+    }
+    if (current.length === 0) {
+      setError("Enter your current password.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await changePassword({ current_password: current, new_password: pwd });
+      reset();
+      setSuccess(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (isLoading) return <LoadingState />;
+  if (!caller) return null;
+
+  const inputStyle: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: 13,
+    border: "1px solid #EDF0F3",
+    borderRadius: 8,
+    padding: "8px 10px",
+    width: "100%",
+    color: "#24262B",
+    outline: "none",
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#777D86",
+    display: "block",
+    marginBottom: 5,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  };
+
+  return (
+    <div style={{ maxWidth: 420 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: "#24262B", marginBottom: 4 }}>
+        Change password
+      </div>
+      <div style={{ fontSize: 12, color: "#777D86", marginBottom: 16 }}>
+        Signed in as {caller.email}
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={labelStyle}>Current password</label>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>New password</label>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={pwd}
+            onChange={(e) => setPwd(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div>
+          <label style={labelStyle}>Confirm new password</label>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+
+        {error && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "#EF4B4B",
+              background: "#FFF1F1",
+              padding: "8px 12px",
+              borderRadius: 8,
+            }}
+            role="alert"
+          >
+            {error}
+          </div>
+        )}
+        {success && (
+          <div
+            style={{
+              fontSize: 12,
+              color: "#04A074",
+              background: "#F0FDF8",
+              padding: "8px 12px",
+              borderRadius: 8,
+            }}
+            role="status"
+          >
+            Password updated.
+          </div>
+        )}
+
+        <div>
+          <Btn type="submit" variant="brand" disabled={submitting}>
+            {submitting ? "Saving…" : "Update password"}
+          </Btn>
+        </div>
+      </form>
+    </div>
   );
 }
 
