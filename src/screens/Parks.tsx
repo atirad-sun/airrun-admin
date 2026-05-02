@@ -5,6 +5,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -12,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  createPark,
   fetchParks,
   fetchPark,
   fetchParkReports,
@@ -116,6 +124,8 @@ export default function Parks() {
 
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [addOpen, setAddOpen] = useState(false);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -336,8 +346,10 @@ export default function Parks() {
             <Btn
               variant="brand"
               size="sm"
-              disabled
-              title="Add Park flow not built yet"
+              onClick={() => {
+                setActionError(null);
+                setAddOpen(true);
+              }}
             >
               {IC.plus} Add Park
             </Btn>
@@ -511,7 +523,238 @@ export default function Parks() {
         confirmLabel={confirm?.visible ? "Show Park" : "Hide Park"}
         danger={confirm ? !confirm.visible : true}
       />
+
+      <AddParkDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onCreated={(park) => {
+          // Refresh the list so the new row appears, and open the Edit
+          // drawer so ops can fill in the optional fields (track length,
+          // hours, station distance, photo) without an extra click.
+          invalidateList();
+          // openDetail only reads `id` from the row; cast is safe.
+          void openDetail({ id: park.id } as ParkListRow, "edit");
+        }}
+        onError={setActionError}
+      />
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Add Park dialog (V1)
+//
+// Minimal-fields creation: name + district + lat + lng + station_name.
+// Track length, hours, photo, etc. stay deferred to the Edit drawer so
+// the form-to-save loop is fast (PRD success metric: time-to-create
+// <90s p50).  Server forces the new park invisible+unverified so it
+// doesn't pollute LIFF until ops opens the Edit drawer and flips the
+// flags.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AddParkDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  onError,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: (park: Park) => void;
+  onError: (msg: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [district, setDistrict] = useState("");
+  const [latStr, setLatStr] = useState("");
+  const [lngStr, setLngStr] = useState("");
+  const [stationName, setStationName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const reset = () => {
+    setName("");
+    setDistrict("");
+    setLatStr("");
+    setLngStr("");
+    setStationName("");
+    setSubmitting(false);
+    setLocalError(null);
+  };
+
+  const handleSubmit = async () => {
+    setLocalError(null);
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0) {
+      setLocalError("Park name is required.");
+      return;
+    }
+    const lat = Number.parseFloat(latStr);
+    const lng = Number.parseFloat(lngStr);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      setLocalError("Latitude must be a number between -90 and 90.");
+      return;
+    }
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      setLocalError("Longitude must be a number between -180 and 180.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { park } = await createPark({
+        name: trimmedName,
+        district: district.trim() === "" ? null : district.trim(),
+        lat,
+        lng,
+        station_name:
+          stationName.trim() === "" ? null : stationName.trim(),
+      });
+      reset();
+      onOpenChange(false);
+      onCreated(park);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: 13,
+    border: "1px solid #EDF0F3",
+    borderRadius: 8,
+    padding: "8px 10px",
+    width: "100%",
+    color: "#24262B",
+    outline: "none",
+    boxSizing: "border-box",
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#777D86",
+    display: "block",
+    marginBottom: 5,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) reset();
+      }}
+    >
+      <DialogContent style={{ maxWidth: 460 }}>
+        <DialogHeader>
+          <DialogTitle>Add Park</DialogTitle>
+        </DialogHeader>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Park name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="สวนลุมพินี"
+              autoFocus
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>District</label>
+            <input
+              type="text"
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              placeholder="Pathumwan"
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Latitude *</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={latStr}
+                onChange={(e) => setLatStr(e.target.value)}
+                placeholder="13.7314"
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Longitude *</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={lngStr}
+                onChange={(e) => setLngStr(e.target.value)}
+                placeholder="100.5414"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>AQI station name</label>
+            <input
+              type="text"
+              value={stationName}
+              onChange={(e) => setStationName(e.target.value)}
+              placeholder="Din Daeng"
+              style={inputStyle}
+            />
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#777D86",
+              padding: "8px 12px",
+              background: "#F7F8FA",
+              borderRadius: 8,
+              border: "1px solid #EDF0F3",
+              lineHeight: 1.5,
+            }}
+          >
+            New parks land hidden and unverified. After saving you'll be
+            taken to the Edit drawer to fill in track length, hours, and
+            photo, then flip Visible to publish to LIFF.
+          </div>
+          {localError && (
+            <div
+              role="alert"
+              style={{
+                fontSize: 12,
+                color: "#EF4B4B",
+                background: "#FFF1F1",
+                padding: "8px 12px",
+                borderRadius: 8,
+              }}
+            >
+              {localError}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Btn
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
+            Cancel
+          </Btn>
+          <Btn
+            variant="brand"
+            onClick={() => void handleSubmit()}
+            disabled={submitting || name.trim().length === 0}
+          >
+            {IC.plus} {submitting ? "Saving…" : "Add Park"}
+          </Btn>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
