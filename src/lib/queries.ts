@@ -47,6 +47,8 @@ export const qk = {
   parkReports: (id: string) => ["park", id, "reports"] as const,
   users: () => ["users"] as const,
   user: (id: string) => ["user", id] as const,
+  reports: () => ["reports"] as const,
+  report: (id: number) => ["report", id] as const,
   bugs: (filters?: BugFilters) =>
     ["bugs", filters ?? {}] as const,
   bug: (id: string) => ["bug", id] as const,

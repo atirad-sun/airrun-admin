@@ -391,3 +391,54 @@ export function patchUser(
 ): Promise<{ user: UserListRow }> {
   return adminWrite<{ user: UserListRow }>("patch-user-notes", { id, patch });
 }
+
+// ── Reports (D3) ──
+
+export type ReportStatus = "new" | "reviewing" | "resolved" | "dismissed";
+export type ReportSeverity = "low" | "medium" | "high";
+
+// List + detail use the same hydrated shape — backend returns
+// park_name + user_name resolved from in-memory maps so the frontend
+// never has to do its own lookup. Photo URLs are public Supabase
+// Storage links; CSP already covers https://*.supabase.co.
+export interface ReportListRow {
+  id: number;
+  park_id: string;
+  park_name: string | null;
+  user_id: string;
+  user_name: string | null;
+  status: ReportStatus;
+  severity: ReportSeverity;
+  category: string | null;
+  weather: string | null;
+  air_quality: string | null;
+  crowd: string | null;
+  photo_url: string | null;
+  message: string | null;
+  resolution: string | null;
+  created_at: string;
+}
+
+export type Report = ReportListRow;
+
+export type ReportPatch = Partial<{
+  status: ReportStatus;
+  severity: ReportSeverity;
+  category: string | null;
+  resolution: string | null;
+}>;
+
+export function fetchReports(): Promise<{ reports: ReportListRow[] }> {
+  return adminRead<{ reports: ReportListRow[] }>("reports");
+}
+
+export function fetchReport(id: number): Promise<{ report: Report }> {
+  return adminRead<{ report: Report }>("report", { id });
+}
+
+export function patchReport(
+  id: number,
+  patch: ReportPatch
+): Promise<{ report: Report }> {
+  return adminWrite<{ report: Report }>("patch-report", { id, patch });
+}
