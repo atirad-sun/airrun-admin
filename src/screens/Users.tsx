@@ -22,10 +22,12 @@ import {
   type UserStatus,
 } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
+import { useCallerRole } from "@/lib/useCallerRole";
 import { CAT_LABELS } from "@/lib/cfg";
 import AqiChip from "@/components/AqiChip";
 import BulkBar from "@/components/BulkBar";
 import Btn from "@/components/Btn";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import Card from "@/components/Card";
 import Chip from "@/components/Chip";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -160,6 +162,8 @@ interface ConfirmState {
 
 export default function Users() {
   const queryClient = useQueryClient();
+  const { caller } = useCallerRole();
+  const canWrite = caller?.canWrite ?? false;
   const {
     data: rows,
     error: loadErrorObj,
@@ -362,6 +366,8 @@ export default function Users() {
         sub={rows ? `${totalCount} registered users` : undefined}
       />
 
+      {!canWrite && <ReadOnlyBanner what="user notes and status edits" />}
+
       <Card>
         <div
           style={{ padding: "14px 16px", borderBottom: "1px solid #EDF0F3" }}
@@ -471,6 +477,7 @@ export default function Users() {
           <UserDrawerContent
             user={drawerUser}
             tab={drawerTab}
+            canWrite={canWrite}
             onTabChange={setDrawerTab}
             onSaveNotes={(notes) =>
               handlePatch(drawerUser.id, { admin_notes: notes })
@@ -518,6 +525,7 @@ export default function Users() {
 function UserDrawerContent({
   user,
   tab,
+  canWrite,
   onTabChange,
   onSaveNotes,
   onRequestSuspend,
@@ -526,6 +534,7 @@ function UserDrawerContent({
 }: {
   user: User;
   tab: DrawerTab;
+  canWrite: boolean;
   onTabChange: (t: DrawerTab) => void;
   onSaveNotes: (notes: string | null) => Promise<void>;
   onRequestSuspend: () => void;
@@ -605,19 +614,20 @@ function UserDrawerContent({
           }}
         >
           <Chip status={user.status} />
-          {user.status === "suspended" ? (
-            <Btn
-              variant="secondary"
-              size="xs"
-              onClick={onRequestReinstate}
-            >
-              {IC.check} Reinstate
-            </Btn>
-          ) : (
-            <Btn variant="danger" size="xs" onClick={onRequestSuspend}>
-              {IC.alertCircle} Suspend
-            </Btn>
-          )}
+          {canWrite &&
+            (user.status === "suspended" ? (
+              <Btn
+                variant="secondary"
+                size="xs"
+                onClick={onRequestReinstate}
+              >
+                {IC.check} Reinstate
+              </Btn>
+            ) : (
+              <Btn variant="danger" size="xs" onClick={onRequestSuspend}>
+                {IC.alertCircle} Suspend
+              </Btn>
+            ))}
         </div>
       </div>
 
@@ -644,7 +654,7 @@ function UserDrawerContent({
       )}
 
       {tab === "profile" && (
-        <ProfileTab user={user} onSaveNotes={onSaveNotes} />
+        <ProfileTab user={user} canWrite={canWrite} onSaveNotes={onSaveNotes} />
       )}
       {tab === "activity" && <ActivityTab user={user} />}
       {tab === "parks" && <ParksTab user={user} />}
@@ -655,9 +665,11 @@ function UserDrawerContent({
 
 function ProfileTab({
   user,
+  canWrite,
   onSaveNotes,
 }: {
   user: User;
+  canWrite: boolean;
   onSaveNotes: (notes: string | null) => Promise<void>;
 }) {
   const [notes, setNotes] = useState(user.admin_notes ?? "");
@@ -756,8 +768,13 @@ function ProfileTab({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
-          placeholder="Internal notes (not visible to user)…"
+          placeholder={
+            canWrite
+              ? "Internal notes (not visible to user)…"
+              : "Internal notes (read-only for viewer role)"
+          }
           maxLength={4000}
+          readOnly={!canWrite}
           style={{
             fontFamily: "inherit",
             fontSize: 13,
@@ -770,32 +787,35 @@ function ProfileTab({
             outline: "none",
             lineHeight: 1.55,
             boxSizing: "border-box",
+            background: canWrite ? "#fff" : "#F7F8FA",
           }}
         />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 8,
-          }}
-        >
-          <span style={{ fontSize: 11, color: "#B6C7D6" }}>
-            {savedAt && !dirty
-              ? `Saved at ${savedAt}`
-              : dirty
-                ? "Unsaved changes"
-                : ""}
-          </span>
-          <Btn
-            variant="secondary"
-            size="xs"
-            onClick={() => void save()}
-            disabled={saving || !dirty}
+        {canWrite && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 8,
+            }}
           >
-            {IC.send} {saving ? "Saving…" : "Save note"}
-          </Btn>
-        </div>
+            <span style={{ fontSize: 11, color: "#B6C7D6" }}>
+              {savedAt && !dirty
+                ? `Saved at ${savedAt}`
+                : dirty
+                  ? "Unsaved changes"
+                  : ""}
+            </span>
+            <Btn
+              variant="secondary"
+              size="xs"
+              onClick={() => void save()}
+              disabled={saving || !dirty}
+            >
+              {IC.send} {saving ? "Saving…" : "Save note"}
+            </Btn>
+          </div>
+        )}
       </div>
     </div>
   );

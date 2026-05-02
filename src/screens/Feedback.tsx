@@ -30,8 +30,10 @@ import {
   type FeedbackStatus,
 } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
+import { useCallerRole } from "@/lib/useCallerRole";
 import { CAT_LABELS } from "@/lib/cfg";
 import Btn from "@/components/Btn";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import Card from "@/components/Card";
 import Chip from "@/components/Chip";
 import DetailRow from "@/components/DetailRow";
@@ -96,6 +98,8 @@ function formatDateTime(iso: string): string {
 
 export default function Feedback() {
   const queryClient = useQueryClient();
+  const { caller } = useCallerRole();
+  const canWrite = caller?.canWrite ?? false;
   const { data: rows, error: loadErrorObj } = useQuery({
     queryKey: qk.feedback(),
     queryFn: () => fetchFeedback().then((r) => r.feedback),
@@ -161,6 +165,8 @@ export default function Feedback() {
         title="Feedback"
         sub={rows ? `${newCount} unread` : undefined}
       />
+
+      {!canWrite && <ReadOnlyBanner what="feedback triage" />}
 
       <div
         style={{
@@ -274,6 +280,7 @@ export default function Feedback() {
           ) : (
             <FeedbackDetail
               item={selected}
+              canWrite={canWrite}
               actionError={actionError}
               onClose={() => {
                 setSelected(null);
@@ -409,11 +416,13 @@ type EditMode = "tags" | "link" | "assign" | "categorize" | null;
 
 function FeedbackDetail({
   item,
+  canWrite,
   actionError,
   onClose,
   onPatch,
 }: {
   item: Feedback;
+  canWrite: boolean;
   actionError: string | null;
   onClose: () => void;
   onPatch: (
@@ -723,38 +732,40 @@ function FeedbackDetail({
         </div>
       )}
 
-      {/* Action chips */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <Btn variant="secondary" size="xs" onClick={() => open("tags")}>
-          {IC.tag} Tag
-        </Btn>
-        <Btn variant="secondary" size="xs" onClick={() => open("link")}>
-          {IC.link} Link
-        </Btn>
-        <Btn variant="secondary" size="xs" onClick={() => open("assign")}>
-          {IC.user} Assign
-        </Btn>
-        {item.status !== "responded" && (
-          <Btn
-            variant="secondary"
-            size="xs"
-            onClick={() =>
-              void onPatch(item.id, { status: "responded" })
-            }
-          >
-            {IC.check} Mark responded
+      {/* Action chips — writers only. */}
+      {canWrite && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Btn variant="secondary" size="xs" onClick={() => open("tags")}>
+            {IC.tag} Tag
           </Btn>
-        )}
-        {item.status !== "archived" && (
-          <Btn
-            variant="ghost"
-            size="xs"
-            onClick={() => void onPatch(item.id, { status: "archived" })}
-          >
-            {IC.x} Archive
+          <Btn variant="secondary" size="xs" onClick={() => open("link")}>
+            {IC.link} Link
           </Btn>
-        )}
-      </div>
+          <Btn variant="secondary" size="xs" onClick={() => open("assign")}>
+            {IC.user} Assign
+          </Btn>
+          {item.status !== "responded" && (
+            <Btn
+              variant="secondary"
+              size="xs"
+              onClick={() =>
+                void onPatch(item.id, { status: "responded" })
+              }
+            >
+              {IC.check} Mark responded
+            </Btn>
+          )}
+          {item.status !== "archived" && (
+            <Btn
+              variant="ghost"
+              size="xs"
+              onClick={() => void onPatch(item.id, { status: "archived" })}
+            >
+              {IC.x} Archive
+            </Btn>
+          )}
+        </div>
+      )}
     </div>
   );
 }

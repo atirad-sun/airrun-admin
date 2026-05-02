@@ -23,9 +23,11 @@ import {
   type ReportStatus,
 } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
+import { useCallerRole } from "@/lib/useCallerRole";
 import { CAT_LABELS } from "@/lib/cfg";
 import BulkBar from "@/components/BulkBar";
 import Btn from "@/components/Btn";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import Card from "@/components/Card";
 import Chip from "@/components/Chip";
 import DataTable, { type Column } from "@/components/DataTable";
@@ -63,6 +65,8 @@ function formatShortDate(iso: string): string {
 
 export default function Reports() {
   const queryClient = useQueryClient();
+  const { caller } = useCallerRole();
+  const canWrite = caller?.canWrite ?? false;
   const { data: rows, error: loadErrorObj } = useQuery({
     queryKey: qk.reports(),
     queryFn: () => fetchReports().then((r) => r.reports),
@@ -207,6 +211,8 @@ export default function Reports() {
         }
       />
 
+      {!canWrite && <ReadOnlyBanner what="report triage" />}
+
       <Card>
         <div
           style={{ padding: "14px 16px", borderBottom: "1px solid #EDF0F3" }}
@@ -324,6 +330,7 @@ export default function Reports() {
         ) : (
           <ReportDetailView
             report={drawerReport}
+            canWrite={canWrite}
             actionError={actionError}
             onPatch={handlePatch}
           />
@@ -339,10 +346,12 @@ export default function Reports() {
 
 function ReportDetailView({
   report,
+  canWrite,
   actionError,
   onPatch,
 }: {
   report: Report;
+  canWrite: boolean;
   actionError: string | null;
   onPatch: (
     id: number,
@@ -533,39 +542,41 @@ function ReportDetailView({
         </div>
       )}
 
-      {/* Action buttons — state-machine driven */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {report.status !== "reviewing" && (
-          <Btn
-            variant="secondary"
-            size="sm"
-            onClick={() => void handleStatusChange("reviewing")}
-            disabled={savingStatus !== null}
-          >
-            {IC.eye} Mark Reviewing
-          </Btn>
-        )}
-        {report.status !== "resolved" && (
-          <Btn
-            variant="brand"
-            size="sm"
-            onClick={() => void handleStatusChange("resolved")}
-            disabled={savingStatus !== null}
-          >
-            {IC.check} Resolve
-          </Btn>
-        )}
-        {report.status !== "dismissed" && (
-          <Btn
-            variant="ghost"
-            size="sm"
-            onClick={() => void handleStatusChange("dismissed")}
-            disabled={savingStatus !== null}
-          >
-            {IC.x} Dismiss
-          </Btn>
-        )}
-      </div>
+      {/* Action buttons — state-machine driven; writers only. */}
+      {canWrite && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {report.status !== "reviewing" && (
+            <Btn
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleStatusChange("reviewing")}
+              disabled={savingStatus !== null}
+            >
+              {IC.eye} Mark Reviewing
+            </Btn>
+          )}
+          {report.status !== "resolved" && (
+            <Btn
+              variant="brand"
+              size="sm"
+              onClick={() => void handleStatusChange("resolved")}
+              disabled={savingStatus !== null}
+            >
+              {IC.check} Resolve
+            </Btn>
+          )}
+          {report.status !== "dismissed" && (
+            <Btn
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleStatusChange("dismissed")}
+              disabled={savingStatus !== null}
+            >
+              {IC.x} Dismiss
+            </Btn>
+          )}
+        </div>
+      )}
     </div>
   );
 }
