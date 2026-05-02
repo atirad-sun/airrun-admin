@@ -35,7 +35,9 @@ import {
   type CreateBugInput,
 } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
+import { useCallerRole } from "@/lib/useCallerRole";
 import Btn from "@/components/Btn";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import Card from "@/components/Card";
 import Chip from "@/components/Chip";
 import DataTable, { type Column } from "@/components/DataTable";
@@ -86,6 +88,8 @@ function statusLabel(s: BugStatus): string {
 
 export default function Bugs() {
   const queryClient = useQueryClient();
+  const { caller } = useCallerRole();
+  const canWrite = caller?.canWrite ?? false;
   // Pull all bugs; filtering is client-side so the API call stays cacheable.
   const {
     data: rows,
@@ -245,11 +249,15 @@ export default function Bugs() {
             : undefined
         }
         actions={
-          <Btn variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
-            {IC.plus} File Bug
-          </Btn>
+          canWrite ? (
+            <Btn variant="brand" size="sm" onClick={() => setCreateOpen(true)}>
+              {IC.plus} File Bug
+            </Btn>
+          ) : null
         }
       />
+
+      {!canWrite && <ReadOnlyBanner what="bug filing and triage" />}
 
       <Card>
         <div
@@ -357,6 +365,7 @@ export default function Bugs() {
         ) : (
           <BugDetailView
             bug={selected}
+            canWrite={canWrite}
             actionError={actionError}
             onStatus={handleStatus}
           />
@@ -387,10 +396,12 @@ export default function Bugs() {
 
 function BugDetailView({
   bug,
+  canWrite,
   actionError,
   onStatus,
 }: {
   bug: Bug;
+  canWrite: boolean;
   actionError: string | null;
   onStatus: (id: string, next: BugStatus) => Promise<void>;
 }) {
@@ -526,27 +537,29 @@ function BugDetailView({
         </div>
       )}
 
-      {/* Action buttons (status state machine) */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {next && (
-          <Btn
-            variant="brand"
-            size="sm"
-            onClick={() => onStatus(bug.id, next)}
-          >
-            {IC.arrowUp} Move to {statusLabel(next)}
-          </Btn>
-        )}
-        {bug.status !== "closed" && (
-          <Btn
-            variant="secondary"
-            size="sm"
-            onClick={() => onStatus(bug.id, "closed")}
-          >
-            {IC.x} Close
-          </Btn>
-        )}
-      </div>
+      {/* Action buttons (status state machine) — only for writers. */}
+      {canWrite && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {next && (
+            <Btn
+              variant="brand"
+              size="sm"
+              onClick={() => onStatus(bug.id, next)}
+            >
+              {IC.arrowUp} Move to {statusLabel(next)}
+            </Btn>
+          )}
+          {bug.status !== "closed" && (
+            <Btn
+              variant="secondary"
+              size="sm"
+              onClick={() => onStatus(bug.id, "closed")}
+            >
+              {IC.x} Close
+            </Btn>
+          )}
+        </div>
+      )}
     </div>
   );
 }

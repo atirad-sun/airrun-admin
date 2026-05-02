@@ -23,8 +23,10 @@ import {
   type ParkReportRow,
 } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
+import { useCallerRole } from "@/lib/useCallerRole";
 import { CAT_LABELS } from "@/lib/cfg";
 import AqiChip from "@/components/AqiChip";
+import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import BulkBar from "@/components/BulkBar";
 import Btn from "@/components/Btn";
 import Card from "@/components/Card";
@@ -78,6 +80,8 @@ interface ConfirmState {
 
 export default function Parks() {
   const queryClient = useQueryClient();
+  const { caller } = useCallerRole();
+  const canWrite = caller?.canWrite ?? false;
   const {
     data: rows,
     error: loadErrorObj,
@@ -294,23 +298,27 @@ export default function Parks() {
           >
             {IC.eye}
           </Btn>
-          <Btn
-            variant="ghost"
-            size="xs"
-            onClick={() => void openDetail(row, "edit")}
-          >
-            {IC.edit}
-          </Btn>
-          <Btn
-            variant="ghost"
-            size="xs"
-            style={{ color: row.visible ? "#F7B731" : "#13B981" }}
-            onClick={() =>
-              setConfirm({ park: row, visible: !row.visible })
-            }
-          >
-            {row.visible ? IC.eyeOff : IC.eye}
-          </Btn>
+          {canWrite && (
+            <>
+              <Btn
+                variant="ghost"
+                size="xs"
+                onClick={() => void openDetail(row, "edit")}
+              >
+                {IC.edit}
+              </Btn>
+              <Btn
+                variant="ghost"
+                size="xs"
+                style={{ color: row.visible ? "#F7B731" : "#13B981" }}
+                onClick={() =>
+                  setConfirm({ park: row, visible: !row.visible })
+                }
+              >
+                {row.visible ? IC.eyeOff : IC.eye}
+              </Btn>
+            </>
+          )}
         </div>
       ),
     },
@@ -324,16 +332,20 @@ export default function Parks() {
           rows ? `${totalCount} parks total · ${visibleCount} visible` : undefined
         }
         actions={
-          <Btn
-            variant="brand"
-            size="sm"
-            disabled
-            title="Add Park flow not built yet"
-          >
-            {IC.plus} Add Park
-          </Btn>
+          canWrite ? (
+            <Btn
+              variant="brand"
+              size="sm"
+              disabled
+              title="Add Park flow not built yet"
+            >
+              {IC.plus} Add Park
+            </Btn>
+          ) : null
         }
       />
+
+      {!canWrite && <ReadOnlyBanner what="park editing" />}
 
       <Card>
         <div style={{ padding: "14px 16px", borderBottom: "1px solid #EDF0F3" }}>

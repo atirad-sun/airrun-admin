@@ -21,6 +21,11 @@ export interface CallerInfo {
   email: string;
   role: "super_admin" | "editor" | "viewer";
   isSuperAdmin: boolean;
+  // True for editor + super_admin; false for viewer.  Mirrors the
+  // backend `canWrite` gate in admin-api-write so we hide buttons
+  // that would 403 instead of letting viewers click and fail.  The
+  // server is still the security boundary — this only drives UX.
+  canWrite: boolean;
   // True for newly-invited admins until they rotate the temp password.
   // RequireRotated reads this to bounce them to /change-password.
   mustChangePassword: boolean;
@@ -43,6 +48,8 @@ export function useCallerRole(): {
       email: data.caller.email,
       role: data.caller.role,
       isSuperAdmin: data.caller.role === "super_admin",
+      canWrite:
+        data.caller.role === "super_admin" || data.caller.role === "editor",
       mustChangePassword: data.caller.must_change_password === true,
     },
     isLoading,
