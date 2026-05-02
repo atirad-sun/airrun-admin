@@ -311,3 +311,83 @@ export function togglePark(
 ): Promise<{ park: Park }> {
   return adminWrite<{ park: Park }>("toggle-park-visibility", { id, visible });
 }
+
+// ── Users ──
+
+export type UserStatus = "active" | "inactive" | "suspended";
+
+export interface UserListRow {
+  id: string; // LINE userId
+  display_name: string;
+  picture_url: string | null;
+  status: UserStatus;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  saved_parks_count: number;
+  reports_count: number;
+  feedback_count: number;
+}
+
+export interface UserSavedPark {
+  id: string;
+  saved_at: string;
+  name: string;
+  district: string | null;
+  aqi: number;
+  aqi_status: string;
+}
+
+export interface UserReport {
+  id: number;
+  park_id: string;
+  status: string;
+  severity: string;
+  category: string | null;
+  weather: string | null;
+  air_quality: string | null;
+  crowd: string | null;
+  created_at: string;
+}
+
+export interface UserFeedback {
+  id: number;
+  category: string;
+  rating: number;
+  message: string;
+  status: string;
+  created_at: string;
+}
+
+// Detail view extends list-row with the LIFF-side preferences + the
+// hydrated activity arrays.  The patch-user-notes write returns just
+// the list row's fields (counts may be null on the write response —
+// frontend re-fetches the list after a successful patch).
+export interface User extends UserListRow {
+  run_time: string | null;
+  notify_enabled: boolean;
+  notify_time: string | null;
+  saved_parks: UserSavedPark[];
+  reports: UserReport[];
+  feedback: UserFeedback[];
+}
+
+export type UserPatch = Partial<{
+  admin_notes: string | null;
+  status: UserStatus;
+}>;
+
+export function fetchUsers(): Promise<{ users: UserListRow[] }> {
+  return adminRead<{ users: UserListRow[] }>("users");
+}
+
+export function fetchUser(id: string): Promise<{ user: User | null }> {
+  return adminRead<{ user: User | null }>("user", { id });
+}
+
+export function patchUser(
+  id: string,
+  patch: UserPatch
+): Promise<{ user: UserListRow }> {
+  return adminWrite<{ user: UserListRow }>("patch-user-notes", { id, patch });
+}
