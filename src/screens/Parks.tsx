@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -707,6 +708,10 @@ function AddParkDialog({
       <DialogContent style={{ maxWidth: 520 }}>
         <DialogHeader>
           <DialogTitle>Add Park</DialogTitle>
+          <DialogDescription>
+            Pin a location on the map and pick an AQI station. Other
+            details can be filled in via the Edit drawer after saving.
+          </DialogDescription>
         </DialogHeader>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
