@@ -36,4 +36,8 @@ Sign in with the email of an admin row (see `app/supabase/016_admin_auth.sql` an
 
 ## Deploy
 
-Separate Vercel project pointed at this repo. CSP in `vercel.json` is admin-only — does not allow `liff.line.me` / `static.line-scdn.net`.
+Separate Vercel project pointed at this repo. Production URL: **https://admin.airrunth.com** (CNAME → `cname.vercel-dns.com` via GoDaddy DNS). The default `airrun-admin.vercel.app` URL also still works during the rollover.
+
+CSP in `vercel.json` is admin-only — does not allow `liff.line.me` / `static.line-scdn.net`.
+
+Every admin SPA origin must appear in the `ALLOWED_ADMIN_ORIGINS` Supabase secret (comma-separated, with scheme, no trailing slash). Adding a new origin without updating that secret breaks CORS preflight on every admin-api call.
