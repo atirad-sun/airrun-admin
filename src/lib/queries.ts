@@ -51,6 +51,9 @@ export const qk = {
   report: (id: number) => ["report", id] as const,
   feedback: () => ["feedback"] as const,
   feedbackItem: (id: number) => ["feedback", id] as const,
+  admins: () => ["admins"] as const,
+  audit: () => ["audit"] as const,
+  callerRole: () => ["caller-role"] as const,
   bugs: (filters?: BugFilters) =>
     ["bugs", filters ?? {}] as const,
   bug: (id: string) => ["bug", id] as const,
