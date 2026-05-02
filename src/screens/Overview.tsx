@@ -4,9 +4,10 @@
 // LoadingState).  Recharts is gone — the AQI bar is hand-rolled per
 // the design.
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { fetchOverview, type OverviewResponse } from "@/lib/adminApi";
+import { fetchOverview } from "@/lib/adminApi";
+import { qk } from "@/lib/queries";
 import { CAT_LABELS } from "@/lib/cfg";
 import { IC } from "@/components/icons";
 import AqiChip from "@/components/AqiChip";
@@ -93,22 +94,10 @@ function formattedToday(): string {
 
 export default function Overview() {
   const navigate = useNavigate();
-  const [data, setData] = useState<OverviewResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchOverview()
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, error } = useQuery({
+    queryKey: qk.overview(),
+    queryFn: fetchOverview,
+  });
 
   if (error) {
     return (
@@ -125,7 +114,7 @@ export default function Overview() {
           }}
           role="alert"
         >
-          Failed to load: {error}
+          Failed to load: {error.message}
         </div>
       </div>
     );

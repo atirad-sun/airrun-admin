@@ -6,7 +6,8 @@
 // out of scope per the R3 plan: no bug_comments table or admin-api action
 // exists for them yet, and building that is deferred to a later phase.
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,7 @@ import {
   type BugStatus,
   type CreateBugInput,
 } from "@/lib/adminApi";
+import { qk } from "@/lib/queries";
 import Btn from "@/components/Btn";
 import Card from "@/components/Card";
 import Chip from "@/components/Chip";
@@ -83,8 +85,21 @@ function statusLabel(s: BugStatus): string {
 }
 
 export default function Bugs() {
-  const [rows, setRows] = useState<BugListRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // Pull all bugs; filtering is client-side so the API call stays cacheable.
+  const {
+    data: rows,
+    error: loadErrorObj,
+  } = useQuery({
+    queryKey: qk.bugs(),
+    queryFn: () => fetchBugs({}).then((r) => r.bugs),
+  });
+  const loadError = loadErrorObj ? loadErrorObj.message : null;
+
+  const invalidateList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk.bugs() }),
+    [queryClient]
+  );
 
   // Filters — all client-side. The API supports filtering on status/severity/
   // area, but combining substring search across title+area means we filter
@@ -97,19 +112,6 @@ export default function Bugs() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setRows(null);
-    setLoadError(null);
-    // Pull all bugs; filtering is client-side so the API call stays cacheable.
-    fetchBugs({})
-      .then((res) => setRows(res.bugs))
-      .catch((err: Error) => setLoadError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -148,23 +150,23 @@ export default function Bugs() {
       try {
         const { bug } = await patchBug(id, { status: next });
         setSelected(bug);
-        load();
+        invalidateList();
       } catch (err) {
         setActionError((err as Error).message);
       }
     },
-    [load]
+    [invalidateList]
   );
 
   const handleCreate = useCallback(
     async (input: CreateBugInput) => {
       const { bug } = await createBug(input);
       setCreateOpen(false);
-      load();
+      invalidateList();
       setSelected(bug);
       setDrawerOpen(true);
     },
-    [load]
+    [invalidateList]
   );
 
   // Counts for the page header sub-line.

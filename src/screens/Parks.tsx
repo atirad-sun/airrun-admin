@@ -3,6 +3,7 @@
 // (admin-api-{read,write} parks/park/park-reports/patch-park/toggle-park-visibility).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -21,6 +22,7 @@ import {
   type ParkPatch,
   type ParkReportRow,
 } from "@/lib/adminApi";
+import { qk } from "@/lib/queries";
 import { CAT_LABELS } from "@/lib/cfg";
 import AqiChip from "@/components/AqiChip";
 import BulkBar from "@/components/BulkBar";
@@ -75,8 +77,23 @@ interface ConfirmState {
 }
 
 export default function Parks() {
-  const [rows, setRows] = useState<ParkListRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data: rows,
+    error: loadErrorObj,
+  } = useQuery({
+    queryKey: qk.parks(),
+    queryFn: () => fetchParks().then((r) => r.parks),
+  });
+  const loadError = loadErrorObj ? loadErrorObj.message : null;
+
+  // Mutations invalidate the list query — react-query refetches in the
+  // background while the cached rows continue rendering.  No manual
+  // setRows(null) flash on edit.
+  const invalidateList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk.parks() }),
+    [queryClient]
+  );
 
   // Filters — all client-side.  44 parks today; way under any threshold
   // where server-side filtering would matter.
@@ -95,18 +112,6 @@ export default function Parks() {
 
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setRows(null);
-    setLoadError(null);
-    fetchParks()
-      .then((res) => setRows(res.parks))
-      .catch((err: Error) => setLoadError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -157,12 +162,12 @@ export default function Parks() {
       try {
         const { park } = await togglePark(parkId, visible);
         setDrawerPark(park);
-        load();
+        invalidateList();
       } catch (err) {
         setActionError((err as Error).message);
       }
     },
-    [load]
+    [invalidateList]
   );
 
   const handlePatch = useCallback(
@@ -171,12 +176,12 @@ export default function Parks() {
       try {
         const { park } = await patchPark(parkId, patch);
         setDrawerPark(park);
-        load();
+        invalidateList();
       } catch (err) {
         setActionError((err as Error).message);
       }
     },
-    [load]
+    [invalidateList]
   );
 
   // Counts for the page-header subline.  Use rows (all data) not filtered.

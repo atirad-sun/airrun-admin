@@ -4,6 +4,7 @@
 // live).  Same shape as Parks.tsx — list + detail drawer with tabs.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ import {
   type UserPatch,
   type UserStatus,
 } from "@/lib/adminApi";
+import { qk } from "@/lib/queries";
 import { CAT_LABELS } from "@/lib/cfg";
 import AqiChip from "@/components/AqiChip";
 import BulkBar from "@/components/BulkBar";
@@ -157,8 +159,20 @@ interface ConfirmState {
 }
 
 export default function Users() {
-  const [rows, setRows] = useState<UserListRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const {
+    data: rows,
+    error: loadErrorObj,
+  } = useQuery({
+    queryKey: qk.users(),
+    queryFn: () => fetchUsers().then((r) => r.users),
+  });
+  const loadError = loadErrorObj ? loadErrorObj.message : null;
+
+  const invalidateList = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: qk.users() }),
+    [queryClient]
+  );
 
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
@@ -172,18 +186,6 @@ export default function Users() {
 
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setRows(null);
-    setLoadError(null);
-    fetchUsers()
-      .then((res) => setRows(res.users))
-      .catch((err: Error) => setLoadError(err.message));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -239,12 +241,12 @@ export default function Users() {
               }
             : prev
         );
-        load();
+        invalidateList();
       } catch (err) {
         setActionError((err as Error).message);
       }
     },
-    [load]
+    [invalidateList]
   );
 
   const totalCount = rows?.length ?? 0;
