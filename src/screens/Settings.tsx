@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -584,6 +585,11 @@ function InviteAdminDialog({
           <DialogTitle>
             {showingResult ? "Admin invited" : "Invite admin user"}
           </DialogTitle>
+          <DialogDescription>
+            {showingResult
+              ? "Share the temporary password with the new admin out-of-band."
+              : "Create a new admin account and generate a one-time temporary password."}
+          </DialogDescription>
         </DialogHeader>
 
         {!showingResult && (
