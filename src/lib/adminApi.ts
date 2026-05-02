@@ -117,7 +117,11 @@ export function fetchOverview(): Promise<OverviewResponse> {
 
 export interface PingResponse {
   ok: true;
-  caller: { email: string; role: "super_admin" | "editor" | "viewer" };
+  caller: {
+    email: string;
+    role: "super_admin" | "editor" | "viewer";
+    must_change_password: boolean;
+  };
 }
 
 export function pingWrite(): Promise<PingResponse> {
@@ -564,10 +568,18 @@ export function fetchAudit(args: {
   return adminRead<AuditPage>("audit", body);
 }
 
+export interface CreateAdminResponse {
+  admin: AdminRow;
+  // Present only when this call provisioned a new auth.users row.
+  // Re-invites of an existing email omit it (the existing user keeps
+  // their password).  Show once to the inviter to share out-of-band.
+  tempPassword?: string;
+}
+
 export function createAdmin(
   input: CreateAdminInput
-): Promise<{ admin: AdminRow }> {
-  return adminWrite<{ admin: AdminRow }>(
+): Promise<CreateAdminResponse> {
+  return adminWrite<CreateAdminResponse>(
     "create-admin",
     input as unknown as Record<string, unknown>
   );
@@ -582,4 +594,21 @@ export function patchAdmin(
 
 export function deleteAdmin(user_id: string): Promise<{ ok: true }> {
   return adminWrite<{ ok: true }>("delete-admin", { user_id });
+}
+
+export interface ChangePasswordInput {
+  new_password: string;
+  // Required for normal rotations from Settings.  Omitted (or
+  // ignored) for forced rotations on first login — the live session
+  // is the proof of identity in that case.
+  current_password?: string;
+}
+
+export function changePassword(
+  input: ChangePasswordInput
+): Promise<{ ok: true }> {
+  return adminWrite<{ ok: true }>(
+    "change-password",
+    input as unknown as Record<string, unknown>
+  );
 }

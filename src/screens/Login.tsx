@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signInWithPassword } from "@/lib/auth";
@@ -13,6 +13,11 @@ function friendlyError(message: string): string {
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const flash =
+    typeof (location.state as { flash?: unknown } | null)?.flash === "string"
+      ? ((location.state as { flash: string }).flash)
+      : null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -44,6 +49,15 @@ export default function Login() {
             Sign in with your work email.
           </p>
         </div>
+
+        {flash && (
+          <p
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            role="status"
+          >
+            {flash}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <Input

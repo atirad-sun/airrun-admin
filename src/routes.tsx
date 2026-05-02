@@ -4,8 +4,10 @@ import {
   Navigate,
   Outlet,
   RouterProvider,
+  useLocation,
 } from "react-router";
 import { supabase } from "@/lib/supabase";
+import { useCallerRole } from "@/lib/useCallerRole";
 import AdminShell from "@/components/AdminShell";
 import Login from "@/screens/Login";
 import Overview from "@/screens/Overview";
@@ -15,6 +17,7 @@ import Reports from "@/screens/Reports";
 import Bugs from "@/screens/Bugs";
 import Feedback from "@/screens/Feedback";
 import Settings from "@/screens/Settings";
+import ChangePassword from "@/screens/ChangePassword";
 
 /**
  * Auth gate: while we don't yet know the session, render nothing.
@@ -47,21 +50,58 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+/**
+ * Forced password rotation gate.
+ *
+ * Newly-invited admins are seeded with `must_change_password = true`
+ * and a server-generated temp password.  This guard wraps the main
+ * AdminShell and bounces anyone with the flag set to /change-password
+ * regardless of which path they hit.  Once they rotate, the
+ * change-password handler clears the flag and invalidates the
+ * callerRole query, dropping the bounce.
+ *
+ * While the role hook is loading we render nothing — same shape as
+ * RequireAuth — so the user doesn't briefly see the dashboard before
+ * being redirected.
+ */
+function RequireRotated() {
+  const { caller, isLoading } = useCallerRole();
+  const location = useLocation();
+  if (isLoading || !caller) return null;
+  if (
+    caller.mustChangePassword &&
+    location.pathname !== "/change-password"
+  ) {
+    return <Navigate to="/change-password" replace />;
+  }
+  return <Outlet />;
+}
+
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
   {
     element: <RequireAuth />,
     children: [
+      // /change-password renders standalone (no AdminShell sidebar/topbar)
+      // because it's a forced gate, not a normal navigable page.  Sits
+      // inside RequireAuth so an unauthenticated visit still bounces to
+      // /login.
+      { path: "change-password", element: <ChangePassword /> },
       {
-        element: <AdminShell />,
+        element: <RequireRotated />,
         children: [
-          { index: true, element: <Overview /> },
-          { path: "parks", element: <Parks /> },
-          { path: "users", element: <Users /> },
-          { path: "reports", element: <Reports /> },
-          { path: "bugs", element: <Bugs /> },
-          { path: "feedback", element: <Feedback /> },
-          { path: "settings", element: <Settings /> },
+          {
+            element: <AdminShell />,
+            children: [
+              { index: true, element: <Overview /> },
+              { path: "parks", element: <Parks /> },
+              { path: "users", element: <Users /> },
+              { path: "reports", element: <Reports /> },
+              { path: "bugs", element: <Bugs /> },
+              { path: "feedback", element: <Feedback /> },
+              { path: "settings", element: <Settings /> },
+            ],
+          },
         ],
       },
     ],
