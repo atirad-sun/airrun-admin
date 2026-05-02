@@ -12,6 +12,7 @@
   "dependencies": {
     "@airrun/shared": "github:atirad-sun/airrun-shared#v0.1.0",
     "@supabase/supabase-js": "^2.105.0",
+    "@tanstack/react-query": "^5.100.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.487.0",
