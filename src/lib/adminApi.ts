@@ -442,3 +442,67 @@ export function patchReport(
 ): Promise<{ report: Report }> {
   return adminWrite<{ report: Report }>("patch-report", { id, patch });
 }
+
+// ── Feedback (D4) ──
+//
+// Two parallel category enums per the option-(c) decision (see plan
+// d4-feedback.md): LIFF stays on the 3-bucket `category`, admin SPA
+// re-tags into `category_admin`. Both columns coexist on the row.
+
+export type FeedbackStatus = "new" | "tagged" | "responded" | "archived";
+export type FeedbackSentiment = "positive" | "negative" | "neutral";
+export type FeedbackCategoryUser = "bug" | "feature" | "general";
+export type FeedbackCategoryAdmin =
+  | "feature_request"
+  | "complaint"
+  | "praise"
+  | "usability"
+  | "data_quality";
+
+export interface FeedbackListRow {
+  id: number;
+  user_id: string | null;
+  user_name: string | null;
+  category: FeedbackCategoryUser;
+  category_admin: FeedbackCategoryAdmin | null;
+  sentiment: FeedbackSentiment | null;
+  rating: number;
+  message: string;
+  tags: string[];
+  status: FeedbackStatus;
+  assignee: string | null;
+  linked_park_id: string | null;
+  linked_park_name: string | null;
+  linked_bug_id: string | null;
+  linked_bug_title: string | null;
+  created_at: string;
+}
+
+export type Feedback = FeedbackListRow;
+
+export type FeedbackPatch = Partial<{
+  status: FeedbackStatus;
+  category_admin: FeedbackCategoryAdmin | null;
+  sentiment: FeedbackSentiment | null;
+  tags: string[];
+  assignee: string | null;
+  linked_park_id: string | null;
+  linked_bug_id: string | null;
+}>;
+
+export function fetchFeedback(): Promise<{ feedback: FeedbackListRow[] }> {
+  return adminRead<{ feedback: FeedbackListRow[] }>("feedback");
+}
+
+export function fetchFeedbackItem(
+  id: number
+): Promise<{ feedback: Feedback }> {
+  return adminRead<{ feedback: Feedback }>("feedback_item", { id });
+}
+
+export function patchFeedback(
+  id: number,
+  patch: FeedbackPatch
+): Promise<{ feedback: Feedback }> {
+  return adminWrite<{ feedback: Feedback }>("patch-feedback", { id, patch });
+}
