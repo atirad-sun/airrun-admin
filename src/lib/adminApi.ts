@@ -506,3 +506,80 @@ export function patchFeedback(
 ): Promise<{ feedback: Feedback }> {
   return adminWrite<{ feedback: Feedback }>("patch-feedback", { id, patch });
 }
+
+// ── Settings — admins + audit (D5) ──
+//
+// All admin-management actions are super-admin only on the server.
+// Frontend hides UI for non-super-admins via the useCallerRole hook;
+// server returns 403 either way.
+
+export type AdminRole = "super_admin" | "editor" | "viewer";
+export type AdminStatus = "active" | "inactive";
+
+export interface AdminRow {
+  user_id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  status: AdminStatus;
+  created_at: string;
+  last_login: string | null;
+}
+
+export interface AuditRow {
+  id: number;
+  admin_id: string | null;
+  admin_name: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  target_label: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export type AdminPatch = Partial<Pick<AdminRow, "name" | "role" | "status">>;
+
+export interface CreateAdminInput {
+  email: string;
+  role: AdminRole;
+}
+
+export interface AuditPage {
+  audit: AuditRow[];
+  has_more: boolean;
+}
+
+export function fetchAdmins(): Promise<{ admins: AdminRow[] }> {
+  return adminRead<{ admins: AdminRow[] }>("admins");
+}
+
+export function fetchAudit(args: {
+  before_id?: number;
+  limit?: number;
+} = {}): Promise<AuditPage> {
+  const body: Record<string, unknown> = {};
+  if (typeof args.before_id === "number") body.before_id = args.before_id;
+  if (typeof args.limit === "number") body.limit = args.limit;
+  return adminRead<AuditPage>("audit", body);
+}
+
+export function createAdmin(
+  input: CreateAdminInput
+): Promise<{ admin: AdminRow }> {
+  return adminWrite<{ admin: AdminRow }>(
+    "create-admin",
+    input as unknown as Record<string, unknown>
+  );
+}
+
+export function patchAdmin(
+  user_id: string,
+  patch: AdminPatch
+): Promise<{ admin: AdminRow }> {
+  return adminWrite<{ admin: AdminRow }>("patch-admin", { user_id, patch });
+}
+
+export function deleteAdmin(user_id: string): Promise<{ ok: true }> {
+  return adminWrite<{ ok: true }>("delete-admin", { user_id });
+}
