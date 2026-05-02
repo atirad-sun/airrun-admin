@@ -45,6 +45,7 @@ export const qk = {
   parks: () => ["parks"] as const,
   park: (id: string) => ["park", id] as const,
   parkReports: (id: string) => ["park", id, "reports"] as const,
+  aqiStations: () => ["aqi-stations"] as const,
   users: () => ["users"] as const,
   user: (id: string) => ["user", id] as const,
   reports: () => ["reports"] as const,

@@ -20,11 +20,13 @@ import {
 } from "@/components/ui/select";
 import {
   createPark,
+  fetchAqiStations,
   fetchParks,
   fetchPark,
   fetchParkReports,
   patchPark,
   togglePark,
+  type AqiStation,
   type Park,
   type ParkListRow,
   type ParkPatch,
@@ -34,6 +36,7 @@ import { qk } from "@/lib/queries";
 import { useCallerRole } from "@/lib/useCallerRole";
 import { CAT_LABELS } from "@/lib/cfg";
 import AqiChip from "@/components/AqiChip";
+import MapPicker from "@/components/MapPicker";
 import ReadOnlyBanner from "@/components/ReadOnlyBanner";
 import BulkBar from "@/components/BulkBar";
 import Btn from "@/components/Btn";
@@ -552,6 +555,50 @@ export default function Parks() {
 // flags.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Sentinel value for the station Select — lives outside the
+// 15-station list so we can distinguish "ops hasn't picked one,
+// let the server choose nearest" from a real station id.
+const AUTO_STATION = "__auto__";
+
+// Haversine in km, matching the server-side helper in
+// admin-api-write.  Used here only to surface the auto-suggested
+// station in the Select while the user is still on the dialog —
+// the server re-computes it independently on submit.
+function haversineKm(
+  aLat: number,
+  aLng: number,
+  bLat: number,
+  bLng: number
+): number {
+  const R = 6371;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function nearestStation(
+  pin: { lat: number; lng: number },
+  stations: AqiStation[]
+): AqiStation | null {
+  if (stations.length === 0) return null;
+  let best = stations[0];
+  let bestDist = haversineKm(pin.lat, pin.lng, best.lat, best.lng);
+  for (let i = 1; i < stations.length; i++) {
+    const d = haversineKm(pin.lat, pin.lng, stations[i].lat, stations[i].lng);
+    if (d < bestDist) {
+      best = stations[i];
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
 function AddParkDialog({
   open,
   onOpenChange,
@@ -565,18 +612,32 @@ function AddParkDialog({
 }) {
   const [name, setName] = useState("");
   const [district, setDistrict] = useState("");
-  const [latStr, setLatStr] = useState("");
-  const [lngStr, setLngStr] = useState("");
-  const [stationName, setStationName] = useState("");
+  const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
+  // Select value: AUTO_STATION until ops overrides.  When AUTO and
+  // a pin is set, the dropdown label shows "Auto: <nearest name>".
+  const [stationChoice, setStationChoice] = useState<string>(AUTO_STATION);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Cache the station list across dialog opens — it's small (15 rows)
+  // and rarely changes.  staleTime: Infinity means we fetch once per
+  // session.
+  const { data: stationsData } = useQuery({
+    queryKey: qk.aqiStations(),
+    queryFn: () => fetchAqiStations().then((r) => r.stations),
+    staleTime: Infinity,
+  });
+  const stations = stationsData ?? [];
+
+  // What the auto-suggest label should say in the Select trigger.
+  const autoSuggestion =
+    pin && stations.length > 0 ? nearestStation(pin, stations) : null;
 
   const reset = () => {
     setName("");
     setDistrict("");
-    setLatStr("");
-    setLngStr("");
-    setStationName("");
+    setPin(null);
+    setStationChoice(AUTO_STATION);
     setSubmitting(false);
     setLocalError(null);
   };
@@ -588,14 +649,8 @@ function AddParkDialog({
       setLocalError("Park name is required.");
       return;
     }
-    const lat = Number.parseFloat(latStr);
-    const lng = Number.parseFloat(lngStr);
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-      setLocalError("Latitude must be a number between -90 and 90.");
-      return;
-    }
-    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-      setLocalError("Longitude must be a number between -180 and 180.");
+    if (!pin) {
+      setLocalError("Pick a location on the map.");
       return;
     }
     setSubmitting(true);
@@ -603,10 +658,12 @@ function AddParkDialog({
       const { park } = await createPark({
         name: trimmedName,
         district: district.trim() === "" ? null : district.trim(),
-        lat,
-        lng,
-        station_name:
-          stationName.trim() === "" ? null : stationName.trim(),
+        lat: pin.lat,
+        lng: pin.lng,
+        // AUTO_STATION → null on the wire so the server picks
+        // nearest itself (so we don't desync from the server's
+        // computation).  Real station id passes through.
+        station_id: stationChoice === AUTO_STATION ? null : stationChoice,
       });
       reset();
       onOpenChange(false);
@@ -647,7 +704,7 @@ function AddParkDialog({
         if (!o) reset();
       }}
     >
-      <DialogContent style={{ maxWidth: 460 }}>
+      <DialogContent style={{ maxWidth: 520 }}>
         <DialogHeader>
           <DialogTitle>Add Park</DialogTitle>
         </DialogHeader>
@@ -673,39 +730,43 @@ function AddParkDialog({
               style={inputStyle}
             />
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Latitude *</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={latStr}
-                onChange={(e) => setLatStr(e.target.value)}
-                placeholder="13.7314"
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Longitude *</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={lngStr}
-                onChange={(e) => setLngStr(e.target.value)}
-                placeholder="100.5414"
-                style={inputStyle}
-              />
+          <div>
+            <label style={labelStyle}>Location * — click map to drop pin</label>
+            <MapPicker value={pin} onChange={setPin} />
+            <div
+              style={{
+                fontSize: 11,
+                color: "#777D86",
+                marginTop: 6,
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, monospace",
+              }}
+            >
+              {pin
+                ? `${pin.lat.toFixed(5)}, ${pin.lng.toFixed(5)}`
+                : "No location picked yet"}
             </div>
           </div>
           <div>
-            <label style={labelStyle}>AQI station name</label>
-            <input
-              type="text"
-              value={stationName}
-              onChange={(e) => setStationName(e.target.value)}
-              placeholder="Din Daeng"
-              style={inputStyle}
-            />
+            <label style={labelStyle}>AQI station</label>
+            <Select value={stationChoice} onValueChange={setStationChoice}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_STATION}>
+                  {autoSuggestion
+                    ? `Auto-suggest (nearest: ${autoSuggestion.name})`
+                    : "Auto-suggest (nearest from pin)"}
+                </SelectItem>
+                {stations.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                    {s.name_th ? ` — ${s.name_th}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div
             style={{
@@ -748,7 +809,7 @@ function AddParkDialog({
           <Btn
             variant="brand"
             onClick={() => void handleSubmit()}
-            disabled={submitting || name.trim().length === 0}
+            disabled={submitting || name.trim().length === 0 || !pin}
           >
             {IC.plus} {submitting ? "Saving…" : "Add Park"}
           </Btn>
