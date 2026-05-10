@@ -44,10 +44,10 @@ import Tabs from "@/components/Tabs";
 import Timeline, { type TimelineItem } from "@/components/Timeline";
 import { IC } from "@/components/icons";
 
-// 7-band aqi_status from parks_with_aqi → 3-band the AqiChip cfg uses.
-// Same collapse rule as Overview / Parks.  Unknown buckets to poor.
+// Thai PCD aqi_status (VeryGood|Good|Moderate|Sensitive|Unhealthy) → 3-band
+// chip UI. VeryGood collapses to good; Sensitive/Unhealthy collapse to poor.
 function aqi3(status: string): "good" | "moderate" | "poor" {
-  if (status === "Good") return "good";
+  if (status === "VeryGood" || status === "Good") return "good";
   if (status === "Moderate") return "moderate";
   return "poor";
 }

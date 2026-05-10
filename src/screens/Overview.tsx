@@ -41,9 +41,10 @@ function bucket3(distribution: { band: string; count: number }[]) {
   return out;
 }
 
-// Map backend's 7-band aqi_status to the 3-key cfg lookup AqiChip wants.
+// Thai PCD aqi_status (VeryGood|Good|Moderate|Sensitive|Unhealthy) → 3-band
+// chip UI. VeryGood collapses to good; Sensitive/Unhealthy collapse to poor.
 function aqi3(status: string): "good" | "moderate" | "poor" {
-  if (status === "Good") return "good";
+  if (status === "VeryGood" || status === "Good") return "good";
   if (status === "Moderate") return "moderate";
   return "poor";
 }
