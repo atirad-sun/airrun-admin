@@ -223,9 +223,19 @@ export default function Parks() {
       key: "aqi",
       label: "AQI / Status",
       sortable: true,
-      render: (v, row) => (
-        <AqiChip value={v as number} status={aqi3(row.aqi_status)} />
-      ),
+      render: (v, row) => {
+        const distKm = row.station_distance_km as number | null;
+        const source = row.aqi_source as string | null;
+        const tooltipParts: string[] = [];
+        if (distKm != null) tooltipParts.push(`${distKm} km from station`);
+        if (source)         tooltipParts.push(`source: ${source}`);
+        const tooltip = tooltipParts.join(" · ") || undefined;
+        return (
+          <span title={tooltip} style={{ cursor: tooltip ? "help" : "default" }}>
+            <AqiChip value={v as number} status={aqi3(row.aqi_status)} />
+          </span>
+        );
+      },
     },
     {
       key: "visible",
@@ -897,7 +907,15 @@ function ParkDrawerContent({
             {park.district ?? "—"}
           </div>
         </div>
-        <AqiChip value={park.aqi} status={aqi3(park.aqi_status)} />
+        <span
+          title={[
+            park.station_distance_km != null ? `${park.station_distance_km} km from station` : null,
+            park.aqi_source ? `source: ${park.aqi_source}` : null,
+          ].filter(Boolean).join(" · ") || undefined}
+          style={{ cursor: "help" }}
+        >
+          <AqiChip value={park.aqi} status={aqi3(park.aqi_status)} />
+        </span>
         <Btn
           variant={park.visible ? "secondary" : "primary"}
           size="xs"

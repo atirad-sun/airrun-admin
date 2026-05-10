@@ -464,6 +464,67 @@ export default function Overview() {
 
         {/* Right column */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Data Freshness */}
+          {(() => {
+            const STALE_MIN = 90;
+            const now = Date.now();
+            let fresh = 0, stale = 0;
+            for (const p of top_parks) {
+              if (!p.aqi_updated_at) { stale++; continue; }
+              const ageMins = (now - new Date(p.aqi_updated_at).getTime()) / 60_000;
+              if (ageMins <= STALE_MIN) fresh++; else stale++;
+            }
+            const total = fresh + stale;
+            const freshPct = total > 0 ? Math.round((fresh / total) * 100) : 0;
+            return (
+              <Card>
+                <div
+                  style={{
+                    padding: "16px 20px",
+                    borderBottom: "1px solid #EDF0F3",
+                  }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "#24262B" }}>
+                    Data Freshness
+                  </span>
+                </div>
+                <div style={{ padding: "16px 20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: "#777D86" }}>Fresh (&lt;90 min)</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#13B981" }}>{fresh}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: "#777D86" }}>Stale (&gt;90 min)</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: stale > 0 ? "#EF4B4B" : "#B6C7D6" }}>{stale}</span>
+                  </div>
+                  {/* Freshness bar */}
+                  <div
+                    style={{
+                      display: "flex",
+                      height: 8,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      background: "#EDF0F3",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${freshPct}%`,
+                        background: "#13B981",
+                        borderRadius: 6,
+                        transition: "width 0.4s",
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#B6C7D6" }}>
+                    {freshPct}% of top {total} parks fresh · threshold 90 min
+                  </div>
+                </div>
+              </Card>
+            );
+          })()}
+
           {/* Recent Activity */}
           <Card>
             <div
