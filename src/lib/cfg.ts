@@ -3,16 +3,30 @@
 // AqiChip rendering pulls from these maps so that hex values stay locked to
 // the design without a screen-by-screen audit later.
 
+import { getBandColor, getBandThaiLabel, type AqiBand } from "@airrun/shared/aqi";
+
 export interface CfgEntry {
   color: string;
   bg: string;
   label: string;
 }
 
+// Admin uses a 3-bucket chip UI (good/moderate/poor). Color + label come from
+// the canonical shared Thai PCD bands; bg tints are admin-specific and stay local.
+// Bucket → representative shared band:
+//   good     → "Good"      (เขียว)
+//   moderate → "Moderate"  (เหลือง)
+//   poor     → "Sensitive" (ส้ม — VeryGood collapses to good, Unhealthy collapses to poor)
+const PICK: Record<"good" | "moderate" | "poor", AqiBand> = {
+  good:     "Good",
+  moderate: "Moderate",
+  poor:     "Sensitive",
+};
+
 export const AQI_CFG: Record<string, CfgEntry> = {
-  good: { color: "#13B981", bg: "#F0FDF8", label: "Good" },
-  moderate: { color: "#F7B731", bg: "#FFFBEB", label: "Moderate" },
-  poor: { color: "#EF4B4B", bg: "#FFF1F1", label: "Poor" },
+  good:     { color: getBandColor(PICK.good),     bg: "#F0FDF8", label: getBandThaiLabel(PICK.good)     },
+  moderate: { color: getBandColor(PICK.moderate), bg: "#FFFBEB", label: getBandThaiLabel(PICK.moderate) },
+  poor:     { color: getBandColor(PICK.poor),     bg: "#FFF1F1", label: getBandThaiLabel(PICK.poor)     },
 };
 
 export const STATUS_CFG: Record<string, CfgEntry> = {

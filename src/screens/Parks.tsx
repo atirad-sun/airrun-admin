@@ -58,11 +58,10 @@ import SevChip from "@/components/SevChip";
 import Tabs from "@/components/Tabs";
 import { IC } from "@/components/icons";
 
-// 7-band aqi_status (Good/Moderate/Poor/Bad/Hazardous/Unknown) → 3-band
-// AQI filter the design uses.  Same collapse rule as Overview.tsx —
-// Unknown buckets to poor so missing-data parks surface as concerning.
+// Thai PCD aqi_status (VeryGood|Good|Moderate|Sensitive|Unhealthy) → 3-band
+// chip UI. VeryGood collapses to good; Sensitive/Unhealthy collapse to poor.
 function aqi3(status: string): "good" | "moderate" | "poor" {
-  if (status === "Good") return "good";
+  if (status === "VeryGood" || status === "Good") return "good";
   if (status === "Moderate") return "moderate";
   return "poor";
 }
