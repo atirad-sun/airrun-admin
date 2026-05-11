@@ -6,7 +6,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { fetchOverview } from "@/lib/adminApi";
+import { fetchOverview, fetchStationFreshness } from "@/lib/adminApi";
 import { qk } from "@/lib/queries";
 import { CAT_LABELS } from "@/lib/cfg";
 import { IC } from "@/components/icons";
@@ -98,6 +98,11 @@ export default function Overview() {
   const { data, error } = useQuery({
     queryKey: qk.overview(),
     queryFn: fetchOverview,
+  });
+  const { data: stationFreshness } = useQuery({
+    queryKey: qk.stationFreshness(),
+    queryFn: fetchStationFreshness,
+    staleTime: 5 * 60 * 1000,
   });
 
   if (error) {
@@ -520,6 +525,50 @@ export default function Overview() {
                   <div style={{ fontSize: 11, color: "#B6C7D6" }}>
                     {freshPct}% of top {total} parks fresh · threshold 90 min
                   </div>
+
+                  {stationFreshness && (() => {
+                    const sFresh = stationFreshness.fresh;
+                    const sTotal = stationFreshness.total;
+                    const sStale = stationFreshness.stale;
+                    const sFreshPct = sTotal > 0 ? Math.round((sFresh / sTotal) * 100) : 0;
+                    return (
+                      <div style={{ marginTop: 20 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, color: "#24262B", fontWeight: 600 }}>สถานี AQI (&lt;90 นาที)</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span style={{ fontSize: 12, color: "#777D86" }}>Fresh</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#13B981" }}>{sFresh}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                          <span style={{ fontSize: 12, color: "#777D86" }}>Stale</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: sStale > 0 ? "#EF4B4B" : "#B6C7D6" }}>{sStale}</span>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            height: 8,
+                            borderRadius: 6,
+                            overflow: "hidden",
+                            background: "#EDF0F3",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${sFreshPct}%`,
+                              background: "#13B981",
+                              borderRadius: 6,
+                              transition: "width 0.4s",
+                            }}
+                          />
+                        </div>
+                        <div style={{ fontSize: 11, color: "#B6C7D6" }}>
+                          {sFreshPct}% of {sTotal} stations fresh · oldest {stationFreshness.oldest_age_min} min ago
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </Card>
             );

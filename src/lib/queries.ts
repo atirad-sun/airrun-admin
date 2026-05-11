@@ -58,4 +58,5 @@ export const qk = {
   bugs: (filters?: BugFilters) =>
     ["bugs", filters ?? {}] as const,
   bug: (id: string) => ["bug", id] as const,
+  stationFreshness: () => ["station-freshness"] as const,
 } as const;

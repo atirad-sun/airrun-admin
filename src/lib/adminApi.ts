@@ -115,6 +115,17 @@ export function fetchOverview(): Promise<OverviewResponse> {
   return adminRead<OverviewResponse>("overview");
 }
 
+export interface StationFreshnessResponse {
+  total: number;
+  fresh: number;
+  stale: number;
+  oldest_age_min: number;
+}
+
+export function fetchStationFreshness(): Promise<StationFreshnessResponse> {
+  return adminRead<StationFreshnessResponse>("station-freshness");
+}
+
 export interface PingResponse {
   ok: true;
   caller: {
