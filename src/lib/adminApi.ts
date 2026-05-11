@@ -253,6 +253,8 @@ export interface ParkListRow {
   aqi: number;
   aqi_status: string; // 7-band: Good|Moderate|Poor|Bad|Hazardous|Unknown (pre-existing)
   aqi_updated_at: string | null;
+  station_distance_km: number | null;
+  aqi_source: string | null;
   reports_count: number;
 }
 
